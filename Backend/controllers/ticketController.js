@@ -1,5 +1,5 @@
+import { Op, literal } from 'sequelize';
 import Ticket from '../models/Ticket.js';
-import TicketSequence from '../models/TicketSequence.js';
 import Activity from '../models/Activity.js';
 import User from '../models/User.js';
 import Project from '../models/Project.js';
@@ -11,71 +11,60 @@ import { checkTicketLimit } from '../services/subscriptionService.js';
 import { incrementTicketUsage } from '../services/usageService.js';
 import { createAuditLog, applySoftDelete } from '../services/auditService.js';
 import { getIO } from '../socket.js';
+import { incrementTicketSequence } from '../utils/dbHelpers.js';
+import { ticketIncludes, activityIncludes } from '../utils/queryIncludes.js';
+import { shapeTicket, shapeTickets, shapeActivities, toApiDoc } from '../utils/apiShape.js';
 
-// Helper to log ticket activity history
 const logTicketActivity = async (ticket, actorId, action, metadata = {}) => {
   try {
-    const activity = new Activity({
+    await Activity.create({
       actorId,
       companyId: ticket.companyId,
       projectId: ticket.projectId,
-      ticketId: ticket._id,
+      ticketId: ticket.id,
       entityType: 'TICKET',
-      entityId: ticket._id,
+      entityId: ticket.id,
       action,
       metadata
     });
-    await activity.save();
   } catch (error) {
     console.error('Failed to log ticket activity:', error);
   }
 };
 
-// Create Ticket
+const fetchPopulatedTicket = async (id) => {
+  const ticket = await Ticket.findByPk(id, { include: ticketIncludes() });
+  return shapeTicket(ticket);
+};
+
 export const createTicket = async (req, res) => {
   try {
     const { projectId } = req.params;
     const { title, description, type, priority, assigneeId, dueDate, estimatedHours } = req.body;
 
     if (!title || !title.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Ticket title is required'
-      });
+      return res.status(400).json({ success: false, message: 'Ticket title is required' });
     }
 
     if (req.projectMemberRole === 'VIEWER') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied: Viewers cannot create tickets'
-      });
+      return res.status(403).json({ success: false, message: 'Access denied: Viewers cannot create tickets' });
     }
 
-    const project = await Project.findById(projectId);
-
+    const project = await Project.findByPk(projectId);
     const ticketLimit = await checkTicketLimit(project.companyId);
     if (!ticketLimit.allowed) {
       return res.status(403).json(ticketLimit.response);
     }
-    
-    // Get and increment sequence counter
-    const seq = await TicketSequence.findOneAndUpdate(
-      { projectId: project._id },
-      { $inc: { currentNumber: 1 } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    );
 
-    // Generate unique ticket number
+    const seq = await incrementTicketSequence(project.id);
+
     let prefix = project.name.trim().replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase();
-    if (prefix.length < 3) {
-      prefix = (prefix + 'PRJ').substring(0, 3);
-    }
+    if (prefix.length < 3) prefix = (prefix + 'PRJ').substring(0, 3);
     const ticketNumber = `${prefix}-${seq.currentNumber}`;
 
-    // Create Ticket
-    const ticket = new Ticket({
+    const ticket = await Ticket.create({
       companyId: project.companyId,
-      projectId: project._id,
+      projectId: project.id,
       ticketNumber,
       title: title.trim(),
       description: description?.trim(),
@@ -90,15 +79,11 @@ export const createTicket = async (req, res) => {
       updatedBy: req.user.id
     });
 
-    await ticket.save();
     await incrementTicketUsage(project.companyId);
-
-    // Log Creation Activity
     await logTicketActivity(ticket, req.user.id, 'TICKET_CREATED', { ticketNumber });
 
-    // Notify assignee if one was set at creation time
-    if (assigneeId && assigneeId.toString() !== req.user.id.toString()) {
-      const actor = await User.findById(req.user.id).select('name');
+    if (assigneeId && String(assigneeId) !== String(req.user.id)) {
+      const actor = await User.findByPk(req.user.id, { attributes: ['name'] });
       await createNotification({
         companyId: project.companyId,
         recipientId: assigneeId,
@@ -107,12 +92,12 @@ export const createTicket = async (req, res) => {
         title: 'Ticket assigned to you',
         message: `${actor?.name || 'Someone'} assigned ${ticketNumber} to you`,
         entityType: 'TICKET',
-        entityId: ticket._id
+        entityId: ticket.id
       });
     }
 
     try {
-      emitDashboardUpdate(project.companyId, 'TICKET_CREATED', project._id);
+      emitDashboardUpdate(project.companyId, 'TICKET_CREATED', project.id);
       await recordDailyMetrics(project.companyId, { created: 1 });
     } catch (err) {
       console.warn('[TicketController] dashboard broadcast failed:', err.message);
@@ -121,49 +106,37 @@ export const createTicket = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'Ticket created successfully',
-      ticket
+      ticket: toApiDoc(ticket)
     });
   } catch (error) {
     console.error('Create ticket error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-// Assign Ticket
 export const assignTicket = async (req, res) => {
   try {
     const { assigneeId } = req.body;
     const ticket = req.ticket;
 
     if (req.projectMemberRole === 'VIEWER') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied: Viewers cannot assign tickets'
-      });
+      return res.status(403).json({ success: false, message: 'Access denied: Viewers cannot assign tickets' });
     }
 
-    // Verify assignee
     if (assigneeId) {
-      const isMember = await ProjectMember.findOne({ projectId: ticket.projectId, userId: assigneeId });
-      const targetUser = await User.findById(assigneeId);
+      const isMember = await ProjectMember.findOne({ where: { projectId: ticket.projectId, userId: assigneeId } });
+      const targetUser = await User.findByPk(assigneeId);
       if (!isMember && (!targetUser || targetUser.role !== 'ADMIN')) {
-        return res.status(400).json({
-          success: false,
-          message: 'Assignee must be a project member or company admin'
-        });
+        return res.status(400).json({ success: false, message: 'Assignee must be a project member or company admin' });
       }
     }
 
     const prevAssigneeId = ticket.assigneeId;
     const prevAssigneeName = ticket.assigneeId
-      ? (await User.findById(ticket.assigneeId))?.name || 'Unknown'
+      ? (await User.findByPk(ticket.assigneeId))?.name || 'Unknown'
       : 'Unassigned';
-
     const newAssigneeName = assigneeId
-      ? (await User.findById(assigneeId))?.name || 'Unknown'
+      ? (await User.findByPk(assigneeId))?.name || 'Unknown'
       : 'Unassigned';
 
     ticket.assigneeId = assigneeId || null;
@@ -179,21 +152,17 @@ export const assignTicket = async (req, res) => {
       companyId: ticket.companyId,
       actorId: req.user.id,
       entityType: 'TICKET',
-      entityId: ticket._id,
+      entityId: ticket.id,
       action: 'ASSIGNEE_CHANGED',
       before: { assigneeId: prevAssigneeId },
       after: { assigneeId: assigneeId || null },
       req
     });
 
-    const populatedTicket = await Ticket.findById(ticket._id)
-      .populate('reporterId', 'name email')
-      .populate('assigneeId', 'name email')
-      .populate('projectId', 'name');
+    const populatedTicket = await fetchPopulatedTicket(ticket.id);
 
-    // Notify the new assignee (only if there is one and it's not self-assign)
-    if (assigneeId && assigneeId.toString() !== req.user.id.toString()) {
-      const actor = await User.findById(req.user.id).select('name');
+    if (assigneeId && String(assigneeId) !== String(req.user.id)) {
+      const actor = await User.findByPk(req.user.id, { attributes: ['name'] });
       await createNotification({
         companyId: ticket.companyId,
         recipientId: assigneeId,
@@ -202,13 +171,12 @@ export const assignTicket = async (req, res) => {
         title: 'Ticket assigned to you',
         message: `${actor?.name || 'Someone'} assigned ${ticket.ticketNumber} to you`,
         entityType: 'TICKET',
-        entityId: ticket._id
+        entityId: ticket.id
       });
     }
 
-    // Emit live update to everyone viewing this ticket
     try {
-      getIO().to(`ticket:${ticket._id}`).emit('ticket:updated', populatedTicket);
+      getIO().to(`ticket:${ticket.id}`).emit('ticket:updated', populatedTicket);
     } catch (socketErr) {
       console.warn('[TicketController] ticket:updated emit failed:', socketErr.message);
     }
@@ -220,32 +188,22 @@ export const assignTicket = async (req, res) => {
     });
   } catch (error) {
     console.error('Assign ticket error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-// Change Status
 export const changeStatus = async (req, res) => {
   try {
     const { status } = req.body;
     const ticket = req.ticket;
-
     const validStatuses = ['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW', 'TESTING', 'DONE', 'CLOSED', 'REOPENED'];
+
     if (!status || !validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid ticket status value'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid ticket status value' });
     }
 
     if (req.projectMemberRole === 'VIEWER') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied: Viewers cannot change status'
-      });
+      return res.status(403).json({ success: false, message: 'Access denied: Viewers cannot change status' });
     }
 
     const oldStatus = ticket.status;
@@ -254,34 +212,27 @@ export const changeStatus = async (req, res) => {
     applyResolutionTimestamp(ticket, status);
     await ticket.save();
 
-    await logTicketActivity(ticket, req.user.id, 'STATUS_CHANGED', {
-      oldStatus,
-      newStatus: status
-    });
+    await logTicketActivity(ticket, req.user.id, 'STATUS_CHANGED', { oldStatus, newStatus: status });
 
     await createAuditLog({
       companyId: ticket.companyId,
       actorId: req.user.id,
       entityType: 'TICKET',
-      entityId: ticket._id,
+      entityId: ticket.id,
       action: 'STATUS_CHANGED',
       before: { status: oldStatus },
       after: { status },
       req
     });
 
-    const populatedTicket = await Ticket.findById(ticket._id)
-      .populate('reporterId', 'name email')
-      .populate('assigneeId', 'name email')
-      .populate('projectId', 'name');
-
-    // Notify assignee + reporter (skip author)
-    const actor = await User.findById(req.user.id).select('name');
+    const populatedTicket = await fetchPopulatedTicket(ticket.id);
+    const actor = await User.findByPk(req.user.id, { attributes: ['name'] });
     const actorName = actor?.name || 'Someone';
-    const actorId = req.user.id.toString();
+    const actorId = String(req.user.id);
     const notifyTargets = new Set();
-    if (ticket.assigneeId && ticket.assigneeId.toString() !== actorId) notifyTargets.add(ticket.assigneeId.toString());
-    if (ticket.reporterId && ticket.reporterId.toString() !== actorId) notifyTargets.add(ticket.reporterId.toString());
+
+    if (ticket.assigneeId && String(ticket.assigneeId) !== actorId) notifyTargets.add(String(ticket.assigneeId));
+    if (ticket.reporterId && String(ticket.reporterId) !== actorId) notifyTargets.add(String(ticket.reporterId));
 
     for (const recipientId of notifyTargets) {
       await createNotification({
@@ -292,13 +243,12 @@ export const changeStatus = async (req, res) => {
         title: 'Ticket status changed',
         message: `${actorName} changed ${ticket.ticketNumber} status: ${oldStatus} → ${status}`,
         entityType: 'TICKET',
-        entityId: ticket._id
+        entityId: ticket.id
       });
     }
 
-    // Emit live update
     try {
-      getIO().to(`ticket:${ticket._id}`).emit('ticket:updated', populatedTicket);
+      getIO().to(`ticket:${ticket.id}`).emit('ticket:updated', populatedTicket);
       emitDashboardUpdate(ticket.companyId, 'STATUS_CHANGED', ticket.projectId);
       if (['DONE', 'CLOSED'].includes(status) && ticket.resolvedAt) {
         const resolutionMs = ticket.resolvedAt.getTime() - ticket.createdAt.getTime();
@@ -315,32 +265,22 @@ export const changeStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('Change status error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-// Update Priority
 export const updatePriority = async (req, res) => {
   try {
     const { priority } = req.body;
     const ticket = req.ticket;
-
     const validPriorities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'BLOCKER'];
+
     if (!priority || !validPriorities.includes(priority)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid priority value'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid priority value' });
     }
 
     if (req.projectMemberRole === 'VIEWER') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied: Viewers cannot modify priority'
-      });
+      return res.status(403).json({ success: false, message: 'Access denied: Viewers cannot modify priority' });
     }
 
     const oldPriority = ticket.priority;
@@ -348,30 +288,23 @@ export const updatePriority = async (req, res) => {
     ticket.updatedBy = req.user.id;
     await ticket.save();
 
-    await logTicketActivity(ticket, req.user.id, 'PRIORITY_CHANGED', {
-      oldPriority,
-      newPriority: priority
-    });
+    await logTicketActivity(ticket, req.user.id, 'PRIORITY_CHANGED', { oldPriority, newPriority: priority });
 
     await createAuditLog({
       companyId: ticket.companyId,
       actorId: req.user.id,
       entityType: 'TICKET',
-      entityId: ticket._id,
+      entityId: ticket.id,
       action: 'PRIORITY_CHANGED',
       before: { priority: oldPriority },
       after: { priority },
       req
     });
 
-    const populatedTicket = await Ticket.findById(ticket._id)
-      .populate('reporterId', 'name email')
-      .populate('assigneeId', 'name email')
-      .populate('projectId', 'name');
+    const populatedTicket = await fetchPopulatedTicket(ticket.id);
 
-    // Notify assignee (priority change is most relevant to the person doing the work)
-    if (ticket.assigneeId && ticket.assigneeId.toString() !== req.user.id.toString()) {
-      const actor = await User.findById(req.user.id).select('name');
+    if (ticket.assigneeId && String(ticket.assigneeId) !== String(req.user.id)) {
+      const actor = await User.findByPk(req.user.id, { attributes: ['name'] });
       await createNotification({
         companyId: ticket.companyId,
         recipientId: ticket.assigneeId,
@@ -380,13 +313,12 @@ export const updatePriority = async (req, res) => {
         title: 'Ticket priority changed',
         message: `${actor?.name || 'Someone'} changed ${ticket.ticketNumber} priority: ${oldPriority} → ${priority}`,
         entityType: 'TICKET',
-        entityId: ticket._id
+        entityId: ticket.id
       });
     }
 
-    // Emit live update
     try {
-      getIO().to(`ticket:${ticket._id}`).emit('ticket:updated', populatedTicket);
+      getIO().to(`ticket:${ticket.id}`).emit('ticket:updated', populatedTicket);
     } catch (socketErr) {
       console.warn('[TicketController] ticket:updated emit failed:', socketErr.message);
     }
@@ -398,38 +330,23 @@ export const updatePriority = async (req, res) => {
     });
   } catch (error) {
     console.error('Update priority error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-// Soft Delete Ticket
 export const deleteTicket = async (req, res) => {
   try {
     const ticket = req.ticket;
 
     if (req.projectMemberRole === 'VIEWER') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied: Viewers cannot delete tickets'
-      });
+      return res.status(403).json({ success: false, message: 'Access denied: Viewers cannot delete tickets' });
     }
 
     if (req.user.role !== 'ADMIN' && req.projectMemberRole !== 'PROJECT_ADMIN') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied: Only administrators can delete tickets'
-      });
+      return res.status(403).json({ success: false, message: 'Access denied: Only administrators can delete tickets' });
     }
 
-    const before = {
-      ticketNumber: ticket.ticketNumber,
-      title: ticket.title,
-      isDeleted: ticket.isDeleted
-    };
-
+    const before = { ticketNumber: ticket.ticketNumber, title: ticket.title, isDeleted: ticket.isDeleted };
     applySoftDelete(ticket, req.user.id);
     ticket.updatedBy = req.user.id;
     await ticket.save();
@@ -440,208 +357,144 @@ export const deleteTicket = async (req, res) => {
       companyId: ticket.companyId,
       actorId: req.user.id,
       entityType: 'TICKET',
-      entityId: ticket._id,
+      entityId: ticket.id,
       action: 'TICKET_DELETED',
       before,
       after: { isDeleted: true, deletedAt: ticket.deletedAt },
       req
     });
 
-    return res.status(200).json({
-      success: true,
-      message: 'Ticket deleted successfully'
-    });
+    return res.status(200).json({ success: true, message: 'Ticket deleted successfully' });
   } catch (error) {
     console.error('Delete ticket error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-// Get Ticket Details with History Audit
 export const getTicketDetails = async (req, res) => {
   try {
-    const ticket = await Ticket.findById(req.ticket._id)
-      .populate('reporterId', 'name email')
-      .populate('assigneeId', 'name email')
-      .populate('projectId', 'name');
-
-    // Fetch unified history logs
-    const history = await Activity.find({ ticketId: ticket._id })
-      .populate('actorId', 'name email')
-      .sort({ createdAt: -1 });
+    const ticket = await fetchPopulatedTicket(req.ticket.id);
+    const historyRows = await Activity.findAll({
+      where: { ticketId: req.ticket.id },
+      include: activityIncludes(),
+      order: [['createdAt', 'DESC']]
+    });
 
     return res.status(200).json({
       success: true,
       ticket,
-      history,
+      history: shapeActivities(historyRows),
       myRole: req.projectMemberRole
     });
   } catch (error) {
     console.error('Get ticket details error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
 
-// Search / List Tickets
-const PRIORITY_RANK_BRANCHES = [
-  { case: { $eq: ['$priority', 'BLOCKER'] }, then: 0 },
-  { case: { $eq: ['$priority', 'CRITICAL'] }, then: 1 },
-  { case: { $eq: ['$priority', 'HIGH'] }, then: 2 },
-  { case: { $eq: ['$priority', 'MEDIUM'] }, then: 3 },
-  { case: { $eq: ['$priority', 'LOW'] }, then: 4 }
-];
-
-const populateTicketList = (query) =>
-  query
-    .populate('reporterId', 'name email')
-    .populate('assigneeId', 'name email')
-    .populate('projectId', 'name');
-
 export const searchTickets = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user || !user.companyId) {
-      return res.status(400).json({
-        success: false,
-        message: 'User must belong to a company'
-      });
+      return res.status(400).json({ success: false, message: 'User must belong to a company' });
     }
 
     let accessibleProjectIds = [];
     if (user.role === 'ADMIN') {
-      const projects = await Project.find({ companyId: user.companyId, isDeleted: false });
-      accessibleProjectIds = projects.map(p => p._id);
+      const projects = await Project.findAll({ where: { companyId: user.companyId, isDeleted: false } });
+      accessibleProjectIds = projects.map((p) => p.id);
     } else {
-      const memberRecords = await ProjectMember.find({ userId: user._id, companyId: user.companyId });
-      accessibleProjectIds = memberRecords.map(m => m.projectId);
+      const memberRecords = await ProjectMember.findAll({ where: { userId: user.id, companyId: user.companyId } });
+      accessibleProjectIds = memberRecords.map((m) => m.projectId);
     }
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    const query = {
+    const where = {
       companyId: user.companyId,
-      projectId: { $in: accessibleProjectIds },
+      projectId: { [Op.in]: accessibleProjectIds },
       isDeleted: false
     };
 
-    if (req.query.status) query.status = req.query.status;
-    if (req.query.priority) query.priority = req.query.priority;
-    if (req.query.type) query.type = req.query.type;
+    if (req.query.status) where.status = req.query.status;
+    if (req.query.priority) where.priority = req.query.priority;
+    if (req.query.type) where.type = req.query.type;
 
     if (req.query.project) {
-      const hasAccess = accessibleProjectIds.some(
-        (id) => id.toString() === req.query.project
-      );
+      const hasAccess = accessibleProjectIds.some((id) => String(id) === req.query.project);
       if (!hasAccess) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied to this project'
-        });
+        return res.status(403).json({ success: false, message: 'Access denied to this project' });
       }
-      query.projectId = req.query.project;
+      where.projectId = req.query.project;
     }
 
     if (req.query.reporter) {
-      query.reporterId = req.query.reporter === 'me' ? user._id : req.query.reporter;
+      where.reporterId = req.query.reporter === 'me' ? user.id : req.query.reporter;
     }
-
     if (req.query.createdBy) {
-      query.createdBy = req.query.createdBy === 'me' ? user._id : req.query.createdBy;
+      where.createdBy = req.query.createdBy === 'me' ? user.id : req.query.createdBy;
     }
-
     if (req.query.assignee) {
-      if (req.query.assignee === 'unassigned') {
-        query.assigneeId = null;
-      } else if (req.query.assignee === 'me') {
-        query.assigneeId = user._id;
-      } else {
-        query.assigneeId = req.query.assignee;
-      }
+      if (req.query.assignee === 'unassigned') where.assigneeId = null;
+      else if (req.query.assignee === 'me') where.assigneeId = user.id;
+      else where.assigneeId = req.query.assignee;
     }
-
     if (req.query.overdue === 'true') {
-      query.dueDate = { $lt: new Date(), $ne: null };
-      query.status = { $nin: ['DONE', 'CLOSED'] };
+      where.dueDate = { [Op.lt]: new Date(), [Op.ne]: null };
+      where.status = { [Op.notIn]: ['DONE', 'CLOSED'] };
     }
-
     if (req.query.search?.trim()) {
-      query.$text = { $search: req.query.search.trim() };
+      const term = `%${req.query.search.trim()}%`;
+      where[Op.or] = [
+        { title: { [Op.like]: term } },
+        { description: { [Op.like]: term } }
+      ];
     }
 
     const sortParam = req.query.sort || 'newest';
-    let sortOptions = { createdAt: -1 };
-    switch (sortParam) {
-      case 'oldest':
-        sortOptions = { createdAt: 1 };
-        break;
-      case 'updatedAt':
-        sortOptions = { updatedAt: -1 };
-        break;
-      case 'dueDate':
-        sortOptions = { dueDate: 1, createdAt: -1 };
-        break;
-      case 'priority':
-        break;
-      case 'newest':
-      default:
-        sortOptions = { createdAt: -1 };
-    }
+    const total = await Ticket.count({ where });
 
     let tickets;
-    const total = await Ticket.countDocuments(query);
-
     if (sortParam === 'priority') {
-      const ranked = await Ticket.aggregate([
-        { $match: query },
-        {
-          $addFields: {
-            priorityRank: {
-              $switch: {
-                branches: PRIORITY_RANK_BRANCHES,
-                default: 5
-              }
-            }
-          }
-        },
-        { $sort: { priorityRank: 1, createdAt: -1 } },
-        { $skip: skip },
-        { $limit: limit },
-        { $project: { _id: 1 } }
-      ]);
-
-      const ticketIds = ranked.map((t) => t._id);
-      const fetched = await populateTicketList(Ticket.find({ _id: { $in: ticketIds } }));
-      const ticketMap = new Map(fetched.map((t) => [t._id.toString(), t]));
-      tickets = ticketIds.map((id) => ticketMap.get(id.toString())).filter(Boolean);
+      const ranked = await Ticket.findAll({
+        where,
+        attributes: ['id'],
+        order: [
+          [literal("CASE priority WHEN 'BLOCKER' THEN 0 WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END"), 'ASC'],
+          ['createdAt', 'DESC']
+        ],
+        offset,
+        limit
+      });
+      const ticketIds = ranked.map((t) => t.id);
+      const fetched = await Ticket.findAll({ where: { id: { [Op.in]: ticketIds } }, include: ticketIncludes() });
+      const ticketMap = new Map(shapeTickets(fetched).map((t) => [String(t._id), t]));
+      tickets = ticketIds.map((id) => ticketMap.get(String(id))).filter(Boolean);
     } else {
-      tickets = await populateTicketList(
-        Ticket.find(query).sort(sortOptions).skip(skip).limit(limit)
-      );
+      let order = [['createdAt', 'DESC']];
+      if (sortParam === 'oldest') order = [['createdAt', 'ASC']];
+      else if (sortParam === 'updatedAt') order = [['updatedAt', 'DESC']];
+      else if (sortParam === 'dueDate') order = [['dueDate', 'ASC'], ['createdAt', 'DESC']];
+
+      const rows = await Ticket.findAll({
+        where,
+        include: ticketIncludes(),
+        order,
+        offset,
+        limit
+      });
+      tickets = shapeTickets(rows);
     }
 
     return res.status(200).json({
       success: true,
       tickets,
-      pagination: {
-        total,
-        page,
-        limit,
-        pages: Math.ceil(total / limit) || 1
-      }
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) || 1 }
     });
   } catch (error) {
     console.error('Search tickets error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

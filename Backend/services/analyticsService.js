@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import { Op, fn, col, literal } from 'sequelize';
 import Ticket from '../models/Ticket.js';
 import User from '../models/User.js';
 import Project from '../models/Project.js';
@@ -6,6 +6,8 @@ import ProjectMember from '../models/ProjectMember.js';
 import Mention from '../models/Mention.js';
 import Activity from '../models/Activity.js';
 import TicketMetrics from '../models/TicketMetrics.js';
+import { activityIncludes } from '../utils/queryIncludes.js';
+import { shapeActivities, toApiDoc } from '../utils/apiShape.js';
 
 const CLOSED_STATUSES = ['DONE', 'CLOSED'];
 const OPEN_STATUSES = ['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW', 'TESTING', 'REOPENED'];
@@ -28,16 +30,14 @@ const daysAgo = (n) => {
   return d;
 };
 
-const toObjectId = (id) => new mongoose.Types.ObjectId(id);
-
-const baseTicketMatch = (companyId, extra = {}) => ({
-  companyId: toObjectId(companyId),
+const baseTicketWhere = (companyId, extra = {}) => ({
+  companyId,
   isDeleted: false,
   ...extra
 });
 
 const fillDateSeries = (rows, days = 7) => {
-  const map = new Map(rows.map((r) => [r._id, r.count]));
+  const map = new Map(rows.map((r) => [r.date, Number(r.count)]));
   const result = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date();
@@ -50,90 +50,113 @@ const fillDateSeries = (rows, days = 7) => {
 
 export const getAccessibleProjectIds = async (userId, companyId, role) => {
   if (role === 'ADMIN') {
-    const projects = await Project.find({ companyId, isDeleted: false }).select('_id');
-    return projects.map((p) => p._id);
+    const projects = await Project.findAll({
+      where: { companyId, isDeleted: false },
+      attributes: ['id']
+    });
+    return projects.map((p) => p.id);
   }
-  const members = await ProjectMember.find({ userId, companyId }).select('projectId');
+  const members = await ProjectMember.findAll({
+    where: { userId, companyId },
+    attributes: ['projectId']
+  });
   return members.map((m) => m.projectId);
 };
 
-export const getTicketsByStatus = async (match) => {
-  const rows = await Ticket.aggregate([
-    { $match: match },
-    { $group: { _id: '$status', count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
-  ]);
-  return rows.map((r) => ({ status: r._id, count: r.count }));
+export const getTicketsByStatus = async (where) => {
+  const rows = await Ticket.findAll({
+    where,
+    attributes: ['status', [fn('COUNT', col('id')), 'count']],
+    group: ['status'],
+    order: [[literal('count'), 'DESC']],
+    raw: true
+  });
+  return rows.map((r) => ({ status: r.status, count: Number(r.count) }));
 };
 
-export const getTicketsByPriority = async (match) => {
+export const getTicketsByPriority = async (where) => {
   const order = ['BLOCKER', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-  const rows = await Ticket.aggregate([
-    { $match: match },
-    { $group: { _id: '$priority', count: { $sum: 1 } } }
-  ]);
-  const map = new Map(rows.map((r) => [r._id, r.count]));
+  const rows = await Ticket.findAll({
+    where,
+    attributes: ['priority', [fn('COUNT', col('id')), 'count']],
+    group: ['priority'],
+    raw: true
+  });
+  const map = new Map(rows.map((r) => [r.priority, Number(r.count)]));
   return order.filter((p) => map.has(p)).map((p) => ({ priority: p, count: map.get(p) }));
 };
 
-export const getEmployeeWorkload = async (match, limit = 10) => {
-  const rows = await Ticket.aggregate([
-    { $match: { ...match, assigneeId: { $ne: null }, status: { $nin: CLOSED_STATUSES } } },
-    { $group: { _id: '$assigneeId', count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-    { $limit: limit },
-    {
-      $lookup: {
-        from: 'users',
-        localField: '_id',
-        foreignField: '_id',
-        as: 'user'
-      }
+export const getEmployeeWorkload = async (where, limit = 10) => {
+  const rows = await Ticket.findAll({
+    where: {
+      ...where,
+      assigneeId: { [Op.ne]: null },
+      status: { [Op.notIn]: CLOSED_STATUSES }
     },
-    { $unwind: '$user' },
-    { $project: { _id: 0, userId: '$_id', name: '$user.name', count: 1 } }
-  ]);
-  return rows;
+    attributes: [
+      'assigneeId',
+      [fn('COUNT', col('Ticket.id')), 'count']
+    ],
+    include: [{
+      model: User,
+      as: 'assignee',
+      attributes: ['name']
+    }],
+    group: ['assigneeId', 'assignee.id', 'assignee.name'],
+    order: [[literal('count'), 'DESC']],
+    limit,
+    subQuery: false
+  });
+
+  return rows.map((row) => ({
+    userId: row.assigneeId,
+    name: row.assignee?.name || 'Unknown',
+    count: Number(row.get('count'))
+  }));
 };
 
-export const getTicketsCreatedPerDay = async (match, days = 7) => {
-  const rows = await Ticket.aggregate([
-    { $match: { ...match, createdAt: { $gte: daysAgo(days) } } },
-    {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-        count: { $sum: 1 }
-      }
+export const getTicketsCreatedPerDay = async (where, days = 7) => {
+  const rows = await Ticket.findAll({
+    where: {
+      ...where,
+      createdAt: { [Op.gte]: daysAgo(days) }
     },
-    { $sort: { _id: 1 } }
-  ]);
+    attributes: [
+      [fn('DATE', col('created_at')), 'date'],
+      [fn('COUNT', col('id')), 'count']
+    ],
+    group: [fn('DATE', col('created_at'))],
+    order: [[fn('DATE', col('created_at')), 'ASC']],
+    raw: true
+  });
   return fillDateSeries(rows, days);
 };
 
-export const getResolutionMetrics = async (match) => {
+export const getResolutionMetrics = async (where) => {
   const [resolvedStats, openCount, reopenedCount, closedCount] = await Promise.all([
-    Ticket.aggregate([
-      { $match: { ...match, resolvedAt: { $ne: null } } },
-      {
-        $group: {
-          _id: null,
-          avgMs: { $avg: { $subtract: ['$resolvedAt', '$createdAt'] } },
-          count: { $sum: 1 }
-        }
-      }
-    ]),
-    Ticket.countDocuments({ ...match, status: { $in: OPEN_STATUSES } }),
-    Ticket.countDocuments({ ...match, status: 'REOPENED' }),
-    Ticket.countDocuments({ ...match, status: { $in: CLOSED_STATUSES } })
+    Ticket.findOne({
+      where: { ...where, resolvedAt: { [Op.ne]: null } },
+      attributes: [
+        [fn('AVG', literal('TIMESTAMPDIFF(MICROSECOND, created_at, resolved_at) / 1000')), 'avgMs'],
+        [fn('COUNT', col('id')), 'count']
+      ],
+      raw: true
+    }),
+    Ticket.count({ where: { ...where, status: { [Op.in]: OPEN_STATUSES } } }),
+    Ticket.count({ where: { ...where, status: 'REOPENED' } }),
+    Ticket.count({ where: { ...where, status: { [Op.in]: CLOSED_STATUSES } } })
   ]);
 
-  const openTickets = await Ticket.find({ ...match, status: { $in: OPEN_STATUSES } }).select('createdAt');
+  const openTickets = await Ticket.findAll({
+    where: { ...where, status: { [Op.in]: OPEN_STATUSES } },
+    attributes: ['createdAt']
+  });
   const avgAgeMs = openTickets.length
     ? openTickets.reduce((sum, t) => sum + (Date.now() - t.createdAt.getTime()), 0) / openTickets.length
     : 0;
 
-  const avgResolutionMs = resolvedStats[0]?.avgMs || 0;
-  const resolvedCount = resolvedStats[0]?.count || 0;
+  const avgResolutionMs = Number(resolvedStats?.avgMs || 0);
+  const resolvedCount = Number(resolvedStats?.count || 0);
   const reopenRate = resolvedCount > 0 ? Math.round((reopenedCount / resolvedCount) * 100) : 0;
 
   return {
@@ -146,19 +169,21 @@ export const getResolutionMetrics = async (match) => {
 };
 
 export const getRecentActivity = async (companyId, projectIds = null, limit = 10) => {
-  const match = { companyId: toObjectId(companyId) };
-  if (projectIds?.length) match.projectId = { $in: projectIds };
+  const where = { companyId };
+  if (projectIds?.length) where.projectId = { [Op.in]: projectIds };
 
-  return Activity.find(match)
-    .populate('actorId', 'name')
-    .populate('ticketId', 'ticketNumber title')
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .lean();
+  const activities = await Activity.findAll({
+    where,
+    include: activityIncludes(),
+    order: [['createdAt', 'DESC']],
+    limit
+  });
+
+  return shapeActivities(activities);
 };
 
 export const getCompanyOverview = async (companyId) => {
-  const match = baseTicketMatch(companyId);
+  const match = baseTicketWhere(companyId);
   const todayStart = startOfDay();
   const todayEnd = endOfDay();
 
@@ -176,21 +201,31 @@ export const getCompanyOverview = async (companyId) => {
     resolution,
     recentActivity
   ] = await Promise.all([
-    Project.countDocuments({ companyId, isDeleted: false }),
-    User.countDocuments({ companyId, role: { $in: ['ADMIN', 'EMPLOYEE'] } }),
-    Ticket.countDocuments({ ...match, status: { $in: OPEN_STATUSES } }),
-    Ticket.countDocuments({ ...match, priority: { $in: ['CRITICAL', 'BLOCKER'] }, status: { $in: OPEN_STATUSES } }),
-    Ticket.countDocuments({
-      ...match,
-      dueDate: { $lt: new Date(), $ne: null },
-      status: { $nin: CLOSED_STATUSES }
+    Project.count({ where: { companyId, isDeleted: false } }),
+    User.count({ where: { companyId, role: { [Op.in]: ['ADMIN', 'EMPLOYEE'] } } }),
+    Ticket.count({ where: { ...match, status: { [Op.in]: OPEN_STATUSES } } }),
+    Ticket.count({
+      where: {
+        ...match,
+        priority: { [Op.in]: ['CRITICAL', 'BLOCKER'] },
+        status: { [Op.in]: OPEN_STATUSES }
+      }
     }),
-    Ticket.countDocuments({
-      ...match,
-      resolvedAt: { $gte: todayStart, $lte: todayEnd }
+    Ticket.count({
+      where: {
+        ...match,
+        dueDate: { [Op.lt]: new Date(), [Op.ne]: null },
+        status: { [Op.notIn]: CLOSED_STATUSES }
+      }
+    }),
+    Ticket.count({
+      where: {
+        ...match,
+        resolvedAt: { [Op.gte]: todayStart, [Op.lte]: todayEnd }
+      }
     }),
     getTicketsByStatus(match),
-    getTicketsByPriority({ ...match, status: { $in: OPEN_STATUSES } }),
+    getTicketsByPriority({ ...match, status: { [Op.in]: OPEN_STATUSES } }),
     getTicketsCreatedPerDay(match),
     getEmployeeWorkload(match),
     getResolutionMetrics(match),
@@ -214,12 +249,10 @@ export const getCompanyOverview = async (companyId) => {
 };
 
 export const getMyDashboard = async (userId, companyId) => {
-  const uid = toObjectId(userId);
   const todayStart = startOfDay();
   const todayEnd = endOfDay();
   const weekStart = daysAgo(7);
-
-  const base = baseTicketMatch(companyId);
+  const base = baseTicketWhere(companyId);
 
   const [
     assignedTickets,
@@ -230,26 +263,33 @@ export const getMyDashboard = async (userId, companyId) => {
     ticketsByPriority,
     recentActivity
   ] = await Promise.all([
-    Ticket.countDocuments({ ...base, assigneeId: uid, status: { $in: OPEN_STATUSES } }),
-    Mention.countDocuments({ companyId: toObjectId(companyId), mentionedUserId: uid }),
-    Ticket.countDocuments({
-      ...base,
-      assigneeId: uid,
-      dueDate: { $gte: todayStart, $lte: todayEnd },
-      status: { $nin: CLOSED_STATUSES }
+    Ticket.count({
+      where: { ...base, assigneeId: userId, status: { [Op.in]: OPEN_STATUSES } }
     }),
-    Ticket.countDocuments({
-      ...base,
-      assigneeId: uid,
-      resolvedAt: { $gte: weekStart }
+    Mention.count({ where: { companyId, mentionedUserId: userId } }),
+    Ticket.count({
+      where: {
+        ...base,
+        assigneeId: userId,
+        dueDate: { [Op.gte]: todayStart, [Op.lte]: todayEnd },
+        status: { [Op.notIn]: CLOSED_STATUSES }
+      }
     }),
-    getTicketsByStatus({ ...base, assigneeId: uid, status: { $in: OPEN_STATUSES } }),
-    getTicketsByPriority({ ...base, assigneeId: uid, status: { $in: OPEN_STATUSES } }),
-    Activity.find({ companyId: toObjectId(companyId), actorId: uid })
-      .populate('ticketId', 'ticketNumber title')
-      .sort({ createdAt: -1 })
-      .limit(8)
-      .lean()
+    Ticket.count({
+      where: { ...base, assigneeId: userId, resolvedAt: { [Op.gte]: weekStart } }
+    }),
+    getTicketsByStatus({ ...base, assigneeId: userId, status: { [Op.in]: OPEN_STATUSES } }),
+    getTicketsByPriority({ ...base, assigneeId: userId, status: { [Op.in]: OPEN_STATUSES } }),
+    Activity.findAll({
+      where: { companyId, actorId: userId },
+      include: [{ model: Ticket, as: 'ticket', attributes: ['id', 'ticketNumber', 'title'] }],
+      order: [['createdAt', 'DESC']],
+      limit: 8
+    }).then((rows) => rows.map((row) => {
+      const plain = toApiDoc(row);
+      if (plain.ticket) plain.ticketId = plain.ticket;
+      return plain;
+    }))
   ]);
 
   return {
@@ -264,7 +304,7 @@ export const getMyDashboard = async (userId, companyId) => {
 };
 
 export const getProjectDashboard = async (projectId, companyId) => {
-  const match = baseTicketMatch(companyId, { projectId: toObjectId(projectId) });
+  const match = baseTicketWhere(companyId, { projectId });
 
   const [
     openTickets,
@@ -279,21 +319,29 @@ export const getProjectDashboard = async (projectId, companyId) => {
     ticketsCreatedPerDay,
     recentActivity
   ] = await Promise.all([
-    Ticket.countDocuments({ ...match, status: { $in: OPEN_STATUSES } }),
-    Ticket.countDocuments({ ...match, type: 'BUG', status: { $in: OPEN_STATUSES } }),
-    Ticket.countDocuments({ ...match, priority: { $in: ['CRITICAL', 'BLOCKER'] }, status: { $in: OPEN_STATUSES } }),
-    Ticket.countDocuments({
-      ...match,
-      dueDate: { $lt: new Date(), $ne: null },
-      status: { $nin: CLOSED_STATUSES }
+    Ticket.count({ where: { ...match, status: { [Op.in]: OPEN_STATUSES } } }),
+    Ticket.count({ where: { ...match, type: 'BUG', status: { [Op.in]: OPEN_STATUSES } } }),
+    Ticket.count({
+      where: {
+        ...match,
+        priority: { [Op.in]: ['CRITICAL', 'BLOCKER'] },
+        status: { [Op.in]: OPEN_STATUSES }
+      }
     }),
-    ProjectMember.countDocuments({ projectId, companyId }),
+    Ticket.count({
+      where: {
+        ...match,
+        dueDate: { [Op.lt]: new Date(), [Op.ne]: null },
+        status: { [Op.notIn]: CLOSED_STATUSES }
+      }
+    }),
+    ProjectMember.count({ where: { projectId, companyId } }),
     getTicketsByStatus(match),
-    getTicketsByPriority({ ...match, status: { $in: OPEN_STATUSES } }),
+    getTicketsByPriority({ ...match, status: { [Op.in]: OPEN_STATUSES } }),
     getEmployeeWorkload(match),
     getResolutionMetrics(match),
     getTicketsCreatedPerDay(match),
-    getRecentActivity(companyId, [toObjectId(projectId)], 8)
+    getRecentActivity(companyId, [projectId], 8)
   ]);
 
   const healthScore = openTickets === 0
@@ -317,29 +365,30 @@ export const getProjectDashboard = async (projectId, companyId) => {
 };
 
 export const recordDailyMetrics = async (companyId, { created = 0, closed = 0, resolutionMs = null } = {}) => {
-  const date = startOfDay();
-  const update = { $inc: {} };
-  if (created) update.$inc.ticketsCreated = created;
-  if (closed) update.$inc.ticketsClosed = closed;
+  const date = startOfDay().toISOString().slice(0, 10);
+  if (!created && !closed && resolutionMs == null) return;
 
-  if (!Object.keys(update.$inc).length && resolutionMs == null) return;
+  const existing = await TicketMetrics.findOne({ where: { companyId, date } });
 
-  const existing = await TicketMetrics.findOne({ companyId, date });
+  const updates = {
+    companyId,
+    date,
+    ticketsCreated: (existing?.ticketsCreated || 0) + (created || 0),
+    ticketsClosed: (existing?.ticketsClosed || 0) + (closed || 0)
+  };
+
   if (resolutionMs != null) {
     const prevCount = existing?.ticketsClosed || 0;
     const prevAvg = existing?.avgResolutionTime || 0;
     const newCount = prevCount + (closed || 1);
-    const newAvg = newCount > 0
+    updates.avgResolutionTime = newCount > 0
       ? ((prevAvg * prevCount) + resolutionMs) / newCount
       : resolutionMs;
-    update.$set = { avgResolutionTime: newAvg };
+  } else if (existing?.avgResolutionTime != null) {
+    updates.avgResolutionTime = existing.avgResolutionTime;
   }
 
-  await TicketMetrics.findOneAndUpdate(
-    { companyId, date },
-    update,
-    { upsert: true, new: true }
-  );
+  await TicketMetrics.upsert(updates);
 };
 
 export const applyResolutionTimestamp = (ticket, newStatus) => {

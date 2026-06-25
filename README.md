@@ -7,8 +7,8 @@ A full-stack MERN bug and issue tracking platform with multi-tenant company supp
 | Layer | Technologies |
 |-------|-------------|
 | **Frontend** | React 19, Vite, React Router, Tailwind CSS 4, Recharts, Socket.IO Client |
-| **Backend** | Node.js, Express, MongoDB (Mongoose), Socket.IO, JWT, Multer |
-| **Database** | MongoDB |
+| **Backend** | Node.js, Express, MySQL (Sequelize), Socket.IO, JWT, Multer |
+| **Database** | MySQL |
 
 ## Features
 
@@ -58,7 +58,8 @@ BugTrackingSystem/
 ├── Backend/
 │   ├── controllers/     # Route handlers
 │   ├── middleware/      # Auth, upload, confirmation
-│   ├── models/          # Mongoose schemas
+│   ├── models/          # Sequelize models
+│   ├── config/          # Database configuration
 │   ├── routes/          # Express route definitions
 │   ├── services/        # Business logic (notifications, billing, audit, etc.)
 │   ├── uploads/         # Uploaded attachments (created at runtime)
@@ -76,7 +77,13 @@ BugTrackingSystem/
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [MongoDB](https://www.mongodb.com/) running locally or a remote connection string
+- [MySQL](https://www.mysql.com/) 8+ running locally or a remote instance
+
+Create the database before starting the backend:
+
+```sql
+CREATE DATABASE bug_tracker;
+```
 
 ## Getting Started
 
@@ -98,7 +105,11 @@ Create a `.env` file in the `Backend` directory:
 
 ```env
 PORT=5000
-MONGO_URI=mongodb://127.0.0.1:27017/bug-tracker
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=bug_tracker
+DB_USER=root
+DB_PASSWORD=your_password
 JWT_SECRET=your_secret_key_here
 ```
 

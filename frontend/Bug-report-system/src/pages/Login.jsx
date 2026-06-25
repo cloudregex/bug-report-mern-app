@@ -44,6 +44,19 @@ export default function Login() {
 
   const triggerShake = () => { setShake(true); setTimeout(() => setShake(false), 500); };
 
+  const fillCredentials = (e, demoEmail, demoPassword) => {
+    e.preventDefault();
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    setError('');
+  };
+
+  const demoAccounts = [
+    { label: 'ADMIN',      variant: 'active',  email: 'admin@example.com',      password: 'Admin@123' },
+    { label: 'EMPLOYEE',   variant: 'open',    email: 'employee@example.com',   password: 'Employee@123' },
+    { label: 'SUPER ADMIN',variant: 'closed',  email: 'superadmin@example.com', password: 'SuperAdmin@123' },
+  ];
+
   return (
     <AuthLayout title="Bug Tracker" subtitle="Citizens Foundation Portal" shake={shake}>
       <div className="auth-card">
@@ -88,20 +101,20 @@ export default function Login() {
         </p>
 
         <div className="cred-hint">
-          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--muted-foreground)' }}>Demo credentials</p>
+          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--muted-foreground)' }}>Demo credentials — click to fill</p>
           <div className="space-y-2">
-            <p className="text-xs font-mono flex items-center gap-2 flex-wrap" style={{ color: 'var(--foreground)' }}>
-              <Badge variant="active">ADMIN</Badge>
-              admin@example.com / admin123
-            </p>
-            <p className="text-xs font-mono flex items-center gap-2 flex-wrap" style={{ color: 'var(--foreground)' }}>
-              <Badge variant="open">EMP</Badge>
-              employee@example.com / employee123
-            </p>
-            <p className="text-xs font-mono flex items-center gap-2 flex-wrap" style={{ color: 'var(--foreground)' }}>
-              <Badge variant="closed">SA</Badge>
-              superadmin@example.com / superadmin123
-            </p>
+            {demoAccounts.map(({ label, variant, email: demoEmail, password: demoPassword }) => (
+              <button
+                key={demoEmail}
+                type="button"
+                onClick={(e) => fillCredentials(e, demoEmail, demoPassword)}
+                className="text-xs font-mono flex items-center gap-2 flex-wrap w-full text-left hover:opacity-70 transition-opacity cursor-pointer"
+                style={{ color: 'var(--foreground)', background: 'none', border: 'none', padding: 0 }}
+              >
+                <Badge variant={variant}>{label}</Badge>
+                {demoEmail} / {demoPassword}
+              </button>
+            ))}
           </div>
         </div>
       </div>

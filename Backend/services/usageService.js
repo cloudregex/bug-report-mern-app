@@ -1,3 +1,4 @@
+import { Op } from 'sequelize';
 import Project from '../models/Project.js';
 import User from '../models/User.js';
 import Ticket from '../models/Ticket.js';
@@ -13,9 +14,15 @@ const startOfMonth = () => {
 export const computeUsageCounts = async (companyId) => {
   const monthStart = startOfMonth();
   const [projectsCount, employeesCount, ticketsCreatedThisMonth] = await Promise.all([
-    Project.countDocuments({ companyId, isDeleted: false }),
-    User.countDocuments({ companyId, role: { $in: ['ADMIN', 'EMPLOYEE'] } }),
-    Ticket.countDocuments({ companyId, isDeleted: false, createdAt: { $gte: monthStart } })
+    Project.count({ where: { companyId, isDeleted: false } }),
+    User.count({ where: { companyId, role: { [Op.in]: ['ADMIN', 'EMPLOYEE'] } } }),
+    Ticket.count({
+      where: {
+        companyId,
+        isDeleted: false,
+        createdAt: { [Op.gte]: monthStart }
+      }
+    })
   ]);
 
   return {
@@ -29,18 +36,18 @@ export const computeUsageCounts = async (companyId) => {
 
 export const syncUsage = async (companyId) => {
   const counts = await computeUsageCounts(companyId);
-  return Usage.findOneAndUpdate(
-    { companyId },
-    { $set: counts },
-    { upsert: true, new: true }
+  const [usage] = await Usage.upsert(
+    { companyId, ...counts },
+    { returning: true }
   );
+  return usage;
 };
 
 export const getUsage = async (companyId) => syncUsage(companyId);
 
 export const incrementTicketUsage = async (companyId) => {
   const month = currentMonth();
-  const usage = await Usage.findOne({ companyId });
+  const usage = await Usage.findOne({ where: { companyId } });
   if (!usage || usage.usageMonth !== month) {
     return syncUsage(companyId);
   }

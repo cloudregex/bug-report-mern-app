@@ -22,8 +22,8 @@ export const parseDevice = (userAgent = '') => {
 
 export const generateTokenId = () => crypto.randomUUID();
 
-export const createUserSession = async ({ userId, tokenId, ipAddress, userAgent }) => {
-  return UserSession.create({
+export const createUserSession = async ({ userId, tokenId, ipAddress, userAgent }) =>
+  UserSession.create({
     userId,
     tokenId,
     device: parseDevice(userAgent),
@@ -31,18 +31,17 @@ export const createUserSession = async ({ userId, tokenId, ipAddress, userAgent 
     lastSeen: new Date(),
     isActive: true
   });
-};
 
 export const touchSession = async (tokenId) => {
   if (!tokenId) return;
-  await UserSession.updateOne(
-    { tokenId, isActive: true },
-    { $set: { lastSeen: new Date() } }
+  await UserSession.update(
+    { lastSeen: new Date() },
+    { where: { tokenId, isActive: true } }
   );
 };
 
 export const revokeSession = async (sessionId, userId) => {
-  const session = await UserSession.findOne({ _id: sessionId, userId });
+  const session = await UserSession.findOne({ where: { id: sessionId, userId } });
   if (!session) return null;
 
   session.isActive = false;
@@ -52,15 +51,16 @@ export const revokeSession = async (sessionId, userId) => {
 
 export const revokeSessionByTokenId = async (tokenId) => {
   if (!tokenId) return null;
-  return UserSession.findOneAndUpdate(
-    { tokenId },
-    { $set: { isActive: false } },
-    { new: true }
-  );
+  const session = await UserSession.findOne({ where: { tokenId } });
+  if (!session) return null;
+
+  session.isActive = false;
+  await session.save();
+  return session;
 };
 
 export const isSessionActive = async (tokenId) => {
   if (!tokenId) return true;
-  const session = await UserSession.findOne({ tokenId, isActive: true });
+  const session = await UserSession.findOne({ where: { tokenId, isActive: true } });
   return Boolean(session);
 };

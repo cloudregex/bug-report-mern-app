@@ -2,6 +2,8 @@ import Plan from '../models/Plan.js';
 import Subscription from '../models/Subscription.js';
 import Company from '../models/Company.js';
 import { syncUsage } from './usageService.js';
+import { subscriptionIncludes } from '../utils/queryIncludes.js';
+import { shapeSubscription, toApiDoc } from '../utils/apiShape.js';
 
 const UPGRADE_RESPONSE = {
   success: false,
@@ -10,9 +12,9 @@ const UPGRADE_RESPONSE = {
 };
 
 export const ensureAllCompanySubscriptions = async () => {
-  const companies = await Company.find({ subscriptionId: null });
+  const companies = await Company.findAll({ where: { subscriptionId: null } });
   for (const company of companies) {
-    await createSubscriptionForCompany(company._id);
+    await createSubscriptionForCompany(company.id);
   }
 };
 
@@ -39,21 +41,21 @@ export const seedPlans = async () => {
   ];
 
   for (const plan of defaults) {
-    await Plan.findOneAndUpdate({ name: plan.name }, plan, { upsert: true, new: true });
+    await Plan.upsert(plan);
   }
 };
 
 export const getDefaultPlan = async () => {
-  let plan = await Plan.findOne({ name: 'FREE' });
+  let plan = await Plan.findOne({ where: { name: 'FREE' } });
   if (!plan) {
     await seedPlans();
-    plan = await Plan.findOne({ name: 'FREE' });
+    plan = await Plan.findOne({ where: { name: 'FREE' } });
   }
   return plan;
 };
 
 export const createSubscriptionForCompany = async (companyId, planId = null) => {
-  const plan = planId ? await Plan.findById(planId) : await getDefaultPlan();
+  const plan = planId ? await Plan.findByPk(planId) : await getDefaultPlan();
   if (!plan) throw new Error('No plan available');
 
   const startDate = new Date();
@@ -62,25 +64,24 @@ export const createSubscriptionForCompany = async (companyId, planId = null) => 
 
   const subscription = await Subscription.create({
     companyId,
-    planId: plan._id,
+    planId: plan.id,
     startDate,
     renewalDate,
     status: 'TRIAL'
   });
 
-  await Company.findByIdAndUpdate(companyId, { subscriptionId: subscription._id });
+  await Company.update({ subscriptionId: subscription.id }, { where: { id: companyId } });
   await syncUsage(companyId);
 
-  return Subscription.findById(subscription._id).populate('planId');
+  return Subscription.findByPk(subscription.id, { include: subscriptionIncludes() });
 };
 
 export const getCompanySubscription = async (companyId) => {
-  const company = await Company.findById(companyId);
+  const company = await Company.findByPk(companyId);
   if (!company?.subscriptionId) {
-    const sub = await createSubscriptionForCompany(companyId);
-    return sub;
+    return createSubscriptionForCompany(companyId);
   }
-  return Subscription.findById(company.subscriptionId).populate('planId');
+  return Subscription.findByPk(company.subscriptionId, { include: subscriptionIncludes() });
 };
 
 export const getActivePlan = async (companyId) => {
@@ -89,7 +90,7 @@ export const getActivePlan = async (companyId) => {
   if (['EXPIRED', 'CANCELLED'].includes(subscription.status)) {
     return null;
   }
-  return subscription.planId;
+  return subscription.plan || subscription.get?.('plan');
 };
 
 const assertActiveSubscription = async (companyId) => {
@@ -97,7 +98,7 @@ const assertActiveSubscription = async (companyId) => {
   if (!subscription || ['EXPIRED', 'CANCELLED'].includes(subscription.status)) {
     return { allowed: false, response: { ...UPGRADE_RESPONSE, reason: 'Subscription inactive' } };
   }
-  const plan = subscription.planId;
+  const plan = subscription.plan || subscription.get?.('plan');
   if (!plan) {
     return { allowed: false, response: { ...UPGRADE_RESPONSE, reason: 'No plan assigned' } };
   }
@@ -164,12 +165,12 @@ export const checkTicketLimit = async (companyId) => {
 export const getBillingInfo = async (companyId) => {
   const subscription = await getCompanySubscription(companyId);
   const usage = await syncUsage(companyId);
-  const plan = subscription?.planId;
+  const plan = subscription?.plan || subscription?.get?.('plan');
 
   return {
     plan: plan ? {
       name: plan.name,
-      price: plan.price,
+      price: Number(plan.price),
       maxProjects: plan.maxProjects,
       maxEmployees: plan.maxEmployees,
       maxStorageGB: plan.maxStorageGB,
@@ -192,28 +193,30 @@ export const getBillingInfo = async (companyId) => {
 };
 
 export const getSaasDashboard = async () => {
-  const [
-    totalCompanies,
-    subscriptions,
-    plans
-  ] = await Promise.all([
-    Company.countDocuments(),
-    Subscription.find().populate('planId').populate('companyId', 'name slug'),
-    Plan.find()
+  const [totalCompanies, subscriptions, plans] = await Promise.all([
+    Company.count(),
+    Subscription.findAll({ include: subscriptionIncludes(), order: [['updatedAt', 'DESC']] }),
+    Plan.findAll()
   ]);
 
   const activeSubscriptions = subscriptions.filter((s) => s.status === 'ACTIVE' || s.status === 'TRIAL');
   const expiredSubscriptions = subscriptions.filter((s) => s.status === 'EXPIRED');
 
-  const mrr = activeSubscriptions.reduce((sum, s) => sum + (s.planId?.price || 0), 0);
+  const mrr = activeSubscriptions.reduce((sum, s) => {
+    const plan = s.plan || s.get?.('plan');
+    return sum + Number(plan?.price || 0);
+  }, 0);
 
   const topCompanies = await Promise.all(
     subscriptions.slice(0, 10).map(async (sub) => {
-      const usage = await syncUsage(sub.companyId._id || sub.companyId);
+      const company = sub.company || sub.get?.('company');
+      const companyId = company?.id || sub.companyId;
+      const usage = await syncUsage(companyId);
+      const plan = sub.plan || sub.get?.('plan');
       return {
-        companyId: sub.companyId._id || sub.companyId,
-        companyName: sub.companyId.name || 'Unknown',
-        plan: sub.planId?.name,
+        companyId,
+        companyName: company?.name || 'Unknown',
+        plan: plan?.name,
         status: sub.status,
         employeesCount: usage.employeesCount,
         projectsCount: usage.projectsCount
@@ -223,19 +226,29 @@ export const getSaasDashboard = async () => {
 
   topCompanies.sort((a, b) => (b.employeesCount + b.projectsCount) - (a.employeesCount + a.projectsCount));
 
-  const totalStorage = subscriptions.reduce(async (accP, sub) => {
-    const acc = await accP;
-    const usage = await syncUsage(sub.companyId._id || sub.companyId);
-    return acc + (usage.storageUsed || 0);
-  }, Promise.resolve(0));
+  let totalStorage = 0;
+  for (const sub of subscriptions) {
+    const company = sub.company || sub.get?.('company');
+    const usage = await syncUsage(company?.id || sub.companyId);
+    totalStorage += usage.storageUsed || 0;
+  }
 
   return {
     totalCompanies,
     mrr,
     activeSubscriptions: activeSubscriptions.length,
     expiredSubscriptions: expiredSubscriptions.length,
-    storageUsageGB: await totalStorage,
+    storageUsageGB: totalStorage,
     topCompanies: topCompanies.slice(0, 5),
-    plans: plans.map((p) => ({ name: p.name, price: p.price, _id: p._id }))
+    plans: plans.map((p) => ({ name: p.name, price: Number(p.price), _id: p.id }))
   };
 };
+
+export const getShapedSubscription = (subscription) => {
+  const shaped = shapeSubscription(subscription);
+  if (shaped.plan) shaped.planId = shaped.plan;
+  if (shaped.company) shaped.companyId = shaped.company;
+  return shaped;
+};
+
+export { toApiDoc };

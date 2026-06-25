@@ -20,7 +20,7 @@ export const createAuditLog = async ({
   try {
     const { ipAddress, userAgent } = req ? getClientMeta(req) : { ipAddress: null, userAgent: null };
 
-    const log = new AuditLog({
+    return await AuditLog.create({
       companyId,
       actorId,
       entityType,
@@ -31,9 +31,6 @@ export const createAuditLog = async ({
       ipAddress,
       userAgent
     });
-
-    await log.save();
-    return log;
   } catch (error) {
     console.error('Failed to write audit log:', error);
     return null;

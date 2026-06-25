@@ -12,7 +12,7 @@ export const getCompanyDashboard = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user?.companyId) {
       return res.status(400).json({ success: false, message: 'User must belong to a company' });
     }
@@ -27,12 +27,12 @@ export const getCompanyDashboard = async (req, res) => {
 
 export const getMeDashboard = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user?.companyId) {
       return res.status(400).json({ success: false, message: 'User must belong to a company' });
     }
 
-    const data = await getMyDashboard(user._id, user.companyId);
+    const data = await getMyDashboard(user.id, user.companyId);
     return res.status(200).json({ success: true, dashboard: data });
   } catch (error) {
     console.error('My dashboard error:', error);
@@ -42,11 +42,11 @@ export const getMeDashboard = async (req, res) => {
 
 export const getProjectDashboardHandler = async (req, res) => {
   try {
-    const project = await Project.findById(req.params.id);
+    const project = await Project.findByPk(req.params.id);
     if (!project || project.isDeleted) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
-    const data = await getProjectDashboard(project._id, project.companyId);
+    const data = await getProjectDashboard(project.id, project.companyId);
     return res.status(200).json({ success: true, dashboard: data });
   } catch (error) {
     console.error('Project dashboard error:', error);

@@ -1,14 +1,17 @@
 import Plan from '../models/Plan.js';
 import Subscription from '../models/Subscription.js';
+import User from '../models/User.js';
 import { getBillingInfo, getSaasDashboard } from '../services/subscriptionService.js';
 import { syncUsage } from '../services/usageService.js';
-import User from '../models/User.js';
 import { createAuditLog } from '../services/auditService.js';
+import { subscriptionIncludes } from '../utils/queryIncludes.js';
+import { shapeSubscription, toApiDoc } from '../utils/apiShape.js';
+import { isUniqueConstraintError } from '../utils/dbHelpers.js';
 
 export const listPlans = async (req, res) => {
   try {
-    const plans = await Plan.find().sort({ price: 1 });
-    return res.status(200).json({ success: true, plans });
+    const plans = await Plan.findAll({ order: [['price', 'ASC']] });
+    return res.status(200).json({ success: true, plans: plans.map(toApiDoc) });
   } catch (error) {
     console.error('List plans error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -32,9 +35,9 @@ export const createPlan = async (req, res) => {
       features: features || []
     });
 
-    return res.status(201).json({ success: true, plan });
+    return res.status(201).json({ success: true, plan: toApiDoc(plan) });
   } catch (error) {
-    if (error.code === 11000) {
+    if (isUniqueConstraintError(error)) {
       return res.status(400).json({ success: false, message: 'Plan name already exists' });
     }
     console.error('Create plan error:', error);
@@ -44,11 +47,14 @@ export const createPlan = async (req, res) => {
 
 export const listSubscriptions = async (req, res) => {
   try {
-    const subscriptions = await Subscription.find()
-      .populate('planId')
-      .populate('companyId', 'name slug')
-      .sort({ updatedAt: -1 });
-    return res.status(200).json({ success: true, subscriptions });
+    const subscriptions = await Subscription.findAll({
+      include: subscriptionIncludes(),
+      order: [['updatedAt', 'DESC']]
+    });
+    return res.status(200).json({
+      success: true,
+      subscriptions: subscriptions.map(shapeSubscription)
+    });
   } catch (error) {
     console.error('List subscriptions error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -57,7 +63,7 @@ export const listSubscriptions = async (req, res) => {
 
 export const updateSubscription = async (req, res) => {
   try {
-    const subscription = await Subscription.findById(req.params.id);
+    const subscription = await Subscription.findByPk(req.params.id);
     if (!subscription) {
       return res.status(404).json({ success: false, message: 'Subscription not found' });
     }
@@ -82,7 +88,7 @@ export const updateSubscription = async (req, res) => {
       companyId: subscription.companyId,
       actorId: req.user.id,
       entityType: 'SUBSCRIPTION',
-      entityId: subscription._id,
+      entityId: subscription.id,
       action: 'SUBSCRIPTION_CHANGED',
       before,
       after: {
@@ -94,11 +100,8 @@ export const updateSubscription = async (req, res) => {
       req
     });
 
-    const populated = await Subscription.findById(subscription._id)
-      .populate('planId')
-      .populate('companyId', 'name slug');
-
-    return res.status(200).json({ success: true, subscription: populated });
+    const populated = await Subscription.findByPk(subscription.id, { include: subscriptionIncludes() });
+    return res.status(200).json({ success: true, subscription: shapeSubscription(populated) });
   } catch (error) {
     console.error('Update subscription error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -107,7 +110,7 @@ export const updateSubscription = async (req, res) => {
 
 export const getBilling = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user?.companyId) {
       return res.status(400).json({ success: false, message: 'No company associated' });
     }
@@ -115,10 +118,7 @@ export const getBilling = async (req, res) => {
     const billing = await getBillingInfo(user.companyId);
     return res.status(200).json({
       success: true,
-      billing: {
-        ...billing,
-        canUpgrade: user.role === 'ADMIN'
-      }
+      billing: { ...billing, canUpgrade: user.role === 'ADMIN' }
     });
   } catch (error) {
     console.error('Get billing error:', error);

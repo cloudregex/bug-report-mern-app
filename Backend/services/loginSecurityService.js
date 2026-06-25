@@ -1,3 +1,4 @@
+import { Op } from 'sequelize';
 import LoginAttempt from '../models/LoginAttempt.js';
 import User from '../models/User.js';
 import { createAuditLog } from './auditService.js';
@@ -5,13 +6,12 @@ import { createAuditLog } from './auditService.js';
 export const MAX_FAILED_ATTEMPTS = 5;
 export const LOCK_DURATION_MS = 30 * 60 * 1000;
 
-export const recordLoginAttempt = async ({ email, ipAddress, success }) => {
-  return LoginAttempt.create({
+export const recordLoginAttempt = async ({ email, ipAddress, success }) =>
+  LoginAttempt.create({
     email: email.toLowerCase().trim(),
     ipAddress,
     success
   });
-};
 
 export const isAccountLocked = (user) => {
   if (!user?.lockedUntil) return false;
@@ -28,9 +28,9 @@ export const handleFailedLogin = async (user, req) => {
 
     await createAuditLog({
       companyId: user.companyId,
-      actorId: user._id,
+      actorId: user.id,
       entityType: 'USER',
-      entityId: user._id,
+      entityId: user.id,
       action: 'ACCOUNT_LOCKED',
       before: { failedLoginAttempts: user.failedLoginAttempts - 1, lockedUntil: null },
       after: {
@@ -53,14 +53,18 @@ export const resetLoginAttempts = async (user) => {
 
 export const getRecentFailedAttempts = (email, minutes = 15) => {
   const since = new Date(Date.now() - minutes * 60 * 1000);
-  return LoginAttempt.countDocuments({
-    email: email.toLowerCase().trim(),
-    success: false,
-    createdAt: { $gte: since }
+  return LoginAttempt.count({
+    where: {
+      email: email.toLowerCase().trim(),
+      success: false,
+      createdAt: { [Op.gte]: since }
+    }
   });
 };
 
 export const getLockedAccounts = () =>
-  User.find({
-    lockedUntil: { $gt: new Date() }
-  }).select('-password').sort({ lockedUntil: -1 });
+  User.findAll({
+    where: { lockedUntil: { [Op.gt]: new Date() } },
+    attributes: { exclude: ['password', 'passwordHistory'] },
+    order: [['lockedUntil', 'DESC']]
+  });

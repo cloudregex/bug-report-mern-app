@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { Op } from 'sequelize';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
 import { createSubscriptionForCompany } from '../services/subscriptionService.js';
@@ -15,6 +16,8 @@ import {
   generateTokenId,
   createUserSession
 } from '../services/sessionService.js';
+import { isUniqueConstraintError } from '../utils/dbHelpers.js';
+import { toApiDoc } from '../utils/apiShape.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bug_tracker_super_secret_jwt_key_2026';
 
@@ -28,7 +31,7 @@ const buildUniqueSlug = async (name) => {
 
   let slug = base;
   let suffix = 1;
-  while (await Company.findOne({ slug })) {
+  while (await Company.findOne({ where: { slug } })) {
     slug = `${base}-${suffix++}`;
   }
   return slug;
@@ -40,7 +43,7 @@ const buildUniqueUsername = async (email) => {
 
   let username = base;
   let suffix = 1;
-  while (await User.findOne({ username })) {
+  while (await User.findOne({ where: { username } })) {
     username = `${base}${suffix++}`;
   }
   return username;
@@ -51,7 +54,7 @@ const completeAuthSession = async (user, req, auditAction = 'LOGIN_SUCCESS', aud
   const tokenId = generateTokenId();
 
   await createUserSession({
-    userId: user._id,
+    userId: user.id,
     tokenId,
     ipAddress,
     userAgent
@@ -59,7 +62,7 @@ const completeAuthSession = async (user, req, auditAction = 'LOGIN_SUCCESS', aud
 
   const token = jwt.sign(
     {
-      id: user._id,
+      id: user.id,
       username: user.username,
       email: user.email,
       role: user.role,
@@ -71,9 +74,9 @@ const completeAuthSession = async (user, req, auditAction = 'LOGIN_SUCCESS', aud
 
   await createAuditLog({
     companyId: user.companyId,
-    actorId: user._id,
+    actorId: user.id,
     entityType: auditMeta.entityType || 'USER',
-    entityId: auditMeta.entityId || user._id,
+    entityId: auditMeta.entityId || user.id,
     action: auditAction,
     before: auditMeta.before ?? null,
     after: auditMeta.after ?? { email: user.email },
@@ -83,7 +86,7 @@ const completeAuthSession = async (user, req, auditAction = 'LOGIN_SUCCESS', aud
   return {
     token,
     user: {
-      id: user._id,
+      id: user.id,
       username: user.username,
       email: user.email,
       name: user.name,
@@ -127,7 +130,7 @@ export const registerCompany = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please enter a valid email address' });
     }
 
-    const existingUser = await User.findOne({ email: emailNormalized });
+    const existingUser = await User.findOne({ where: { email: emailNormalized } });
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'An account with this email already exists' });
     }
@@ -150,17 +153,17 @@ export const registerCompany = async (req, res) => {
     createdCompany = await Company.create({
       name: companyName.trim(),
       slug,
-      createdBy: createdUser._id
+      createdBy: createdUser.id
     });
 
-    createdUser.companyId = createdCompany._id;
+    createdUser.companyId = createdCompany.id;
     await createdUser.save();
 
-    await createSubscriptionForCompany(createdCompany._id);
+    await createSubscriptionForCompany(createdCompany.id);
 
     const auth = await completeAuthSession(createdUser, req, 'COMPANY_REGISTERED', {
       entityType: 'COMPANY',
-      entityId: createdCompany._id,
+      entityId: createdCompany.id,
       before: null,
       after: {
         companyName: createdCompany.name,
@@ -175,20 +178,20 @@ export const registerCompany = async (req, res) => {
       token: auth.token,
       user: auth.user,
       company: {
-        id: createdCompany._id,
+        id: createdCompany.id,
         name: createdCompany.name,
         slug: createdCompany.slug
       }
     });
   } catch (error) {
-    if (createdCompany?._id) {
-      await Company.findByIdAndDelete(createdCompany._id).catch(() => {});
+    if (createdCompany?.id) {
+      await Company.destroy({ where: { id: createdCompany.id } }).catch(() => {});
     }
-    if (createdUser?._id) {
-      await User.findByIdAndDelete(createdUser._id).catch(() => {});
+    if (createdUser?.id) {
+      await User.destroy({ where: { id: createdUser.id } }).catch(() => {});
     }
 
-    if (error.code === 11000) {
+    if (isUniqueConstraintError(error)) {
       return res.status(400).json({ success: false, message: 'Email or company slug already exists' });
     }
 
@@ -211,10 +214,12 @@ export const loginUser = async (req, res) => {
 
     const normalizedInput = email.toLowerCase().trim();
     const user = await User.findOne({
-      $or: [
-        { email: normalizedInput },
-        { username: normalizedInput }
-      ]
+      where: {
+        [Op.or]: [
+          { email: normalizedInput },
+          { username: normalizedInput }
+        ]
+      }
     });
 
     if (!user) {
@@ -256,7 +261,7 @@ export const loginUser = async (req, res) => {
 
     const tokenId = generateTokenId();
     await createUserSession({
-      userId: user._id,
+      userId: user.id,
       tokenId,
       ipAddress,
       userAgent
@@ -264,7 +269,7 @@ export const loginUser = async (req, res) => {
 
     const token = jwt.sign(
       {
-        id: user._id,
+        id: user.id,
         username: user.username,
         email: user.email,
         role: user.role,
@@ -276,9 +281,9 @@ export const loginUser = async (req, res) => {
 
     await createAuditLog({
       companyId: user.companyId,
-      actorId: user._id,
+      actorId: user.id,
       entityType: 'USER',
-      entityId: user._id,
+      entityId: user.id,
       action: 'LOGIN_SUCCESS',
       before: null,
       after: { email: user.email, device: userAgent },
@@ -290,7 +295,7 @@ export const loginUser = async (req, res) => {
       message: 'Login successful',
       token,
       user: {
-        id: user._id,
+        id: user.id,
         username: user.username,
         email: user.email,
         name: user.name,
@@ -309,7 +314,9 @@ export const loginUser = async (req, res) => {
 
 export const getUserProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password', 'passwordHistory'] }
+    });
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -319,7 +326,7 @@ export const getUserProfile = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      user
+      user: toApiDoc(user)
     });
   } catch (error) {
     console.error('Get profile error:', error);
@@ -332,44 +339,42 @@ export const getUserProfile = async (req, res) => {
 
 export const seedAdminUser = async () => {
   try {
-    const userCount = await User.countDocuments();
-    if (userCount > 0) return;
+    const existing = await User.findOne({ where: { email: 'admin@example.com' } });
+    if (existing) return;
 
-    const company = new Company({
-      name: 'Citizens Foundation',
-      slug: 'citizens-foundation',
-      createdBy: new (await import('mongoose')).default.Types.ObjectId()
-    });
-    await company.save();
-
+    // Create admin first so we have a real UUID for company.createdBy (avoids FK violation)
     const adminPassword = await bcrypt.hash('Admin@123', 10);
-    const admin = new User({
+    const admin = await User.create({
       name: 'Admin User',
       email: 'admin@example.com',
       username: 'admin',
       password: adminPassword,
       role: 'ADMIN',
-      companyId: company._id,
+      companyId: null,
       status: 'ACTIVE'
     });
+
+    const company = await Company.create({
+      name: 'Citizens Foundation',
+      slug: 'citizens-foundation',
+      createdBy: admin.id
+    });
+
+    admin.companyId = company.id;
     await admin.save();
 
-    company.createdBy = admin._id;
-    await company.save();
-
-    await createSubscriptionForCompany(company._id);
+    await createSubscriptionForCompany(company.id);
 
     const empPassword = await bcrypt.hash('Employee@123', 10);
-    const employee = new User({
+    await User.create({
       name: 'John Employee',
       email: 'employee@example.com',
       username: 'john',
       password: empPassword,
       role: 'EMPLOYEE',
-      companyId: company._id,
+      companyId: company.id,
       status: 'ACTIVE'
     });
-    await employee.save();
 
     const superAdminPassword = await bcrypt.hash('SuperAdmin@123', 10);
     await User.create({
@@ -400,7 +405,7 @@ export const seedAdminUser = async () => {
 
 export const seedSuperAdmin = async () => {
   try {
-    const existing = await User.findOne({ role: 'SUPER_ADMIN' });
+    const existing = await User.findOne({ where: { role: 'SUPER_ADMIN' } });
     if (existing) return;
 
     const password = await bcrypt.hash('SuperAdmin@123', 10);

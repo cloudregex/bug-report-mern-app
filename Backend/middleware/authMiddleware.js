@@ -1,10 +1,12 @@
 import jwt from 'jsonwebtoken';
+import { Op } from 'sequelize';
 import User from '../models/User.js';
 import Project from '../models/Project.js';
 import ProjectMember from '../models/ProjectMember.js';
 import Ticket from '../models/Ticket.js';
 import { isSessionActive, touchSession } from '../services/sessionService.js';
 import { isAccountLocked } from '../services/loginSecurityService.js';
+import { excludePassword } from '../utils/apiShape.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bug_tracker_super_secret_jwt_key_2026';
 
@@ -30,7 +32,9 @@ export const authenticateToken = async (req, res, next) => {
       });
     }
 
-    const user = await User.findById(decoded.id).select('-password');
+    const user = await User.findByPk(decoded.id, {
+      attributes: { exclude: ['password', 'passwordHistory'] }
+    });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -65,7 +69,7 @@ export const authenticateToken = async (req, res, next) => {
 
     req.user = {
       ...decoded,
-      companyId: user.companyId?.toString() || null
+      companyId: user.companyId ? String(user.companyId) : null
     };
     req.dbUser = user;
     next();
@@ -78,16 +82,14 @@ export const authenticateToken = async (req, res, next) => {
   }
 };
 
-export const authorize = (roles = []) => {
-  return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Forbidden: Access denied'
-      });
-    }
-    next();
-  };
+export const authorize = (roles = []) => (req, res, next) => {
+  if (!req.user || !roles.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Forbidden: Access denied'
+    });
+  }
+  next();
 };
 
 export const authorizeProjectAccess = async (req, res, next) => {
@@ -101,7 +103,7 @@ export const authorizeProjectAccess = async (req, res, next) => {
       });
     }
 
-    const user = req.dbUser || await User.findById(req.user.id);
+    const user = req.dbUser || await User.findByPk(req.user.id);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -109,7 +111,7 @@ export const authorizeProjectAccess = async (req, res, next) => {
       });
     }
 
-    const project = await Project.findById(projectId);
+    const project = await Project.findByPk(projectId);
     if (!project || project.isDeleted) {
       return res.status(404).json({
         success: false,
@@ -117,7 +119,7 @@ export const authorizeProjectAccess = async (req, res, next) => {
       });
     }
 
-    if (project.companyId.toString() !== user.companyId.toString()) {
+    if (String(project.companyId) !== String(user.companyId)) {
       return res.status(403).json({
         success: false,
         message: 'Access denied: Company mismatch'
@@ -130,8 +132,7 @@ export const authorizeProjectAccess = async (req, res, next) => {
     }
 
     const member = await ProjectMember.findOne({
-      projectId: project._id,
-      userId: user._id
+      where: { projectId: project.id, userId: user.id }
     });
 
     if (!member) {
@@ -163,7 +164,7 @@ export const authorizeTicketAccess = async (req, res, next) => {
       });
     }
 
-    const user = req.dbUser || await User.findById(req.user.id);
+    const user = req.dbUser || await User.findByPk(req.user.id);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -171,7 +172,7 @@ export const authorizeTicketAccess = async (req, res, next) => {
       });
     }
 
-    const ticket = await Ticket.findById(ticketId);
+    const ticket = await Ticket.findByPk(ticketId);
     if (!ticket || ticket.isDeleted) {
       return res.status(404).json({
         success: false,
@@ -179,7 +180,7 @@ export const authorizeTicketAccess = async (req, res, next) => {
       });
     }
 
-    if (ticket.companyId.toString() !== user.companyId.toString()) {
+    if (String(ticket.companyId) !== String(user.companyId)) {
       return res.status(403).json({
         success: false,
         message: 'Access denied: Company mismatch'
@@ -193,8 +194,7 @@ export const authorizeTicketAccess = async (req, res, next) => {
     }
 
     const member = await ProjectMember.findOne({
-      projectId: ticket.projectId,
-      userId: user._id
+      where: { projectId: ticket.projectId, userId: user.id }
     });
 
     if (!member) {
@@ -215,3 +215,5 @@ export const authorizeTicketAccess = async (req, res, next) => {
     });
   }
 };
+
+export { excludePassword };

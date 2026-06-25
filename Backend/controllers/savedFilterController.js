@@ -1,19 +1,20 @@
 import SavedFilter from '../models/SavedFilter.js';
 import User from '../models/User.js';
+import { toApiDoc } from '../utils/apiShape.js';
 
 export const getSavedFilters = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user?.companyId) {
       return res.status(400).json({ success: false, message: 'User must belong to a company' });
     }
 
-    const filters = await SavedFilter.find({
-      companyId: user.companyId,
-      userId: user._id
-    }).sort({ name: 1 });
+    const filters = await SavedFilter.findAll({
+      where: { companyId: user.companyId, userId: user.id },
+      order: [['name', 'ASC']]
+    });
 
-    return res.status(200).json({ success: true, savedFilters: filters });
+    return res.status(200).json({ success: true, savedFilters: filters.map(toApiDoc) });
   } catch (error) {
     console.error('Get saved filters error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -22,7 +23,7 @@ export const getSavedFilters = async (req, res) => {
 
 export const createSavedFilter = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user?.companyId) {
       return res.status(400).json({ success: false, message: 'User must belong to a company' });
     }
@@ -34,12 +35,12 @@ export const createSavedFilter = async (req, res) => {
 
     const savedFilter = await SavedFilter.create({
       companyId: user.companyId,
-      userId: user._id,
+      userId: user.id,
       name: name.trim(),
       filters
     });
 
-    return res.status(201).json({ success: true, savedFilter });
+    return res.status(201).json({ success: true, savedFilter: toApiDoc(savedFilter) });
   } catch (error) {
     console.error('Create saved filter error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -48,28 +49,23 @@ export const createSavedFilter = async (req, res) => {
 
 export const updateSavedFilter = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user?.companyId) {
       return res.status(400).json({ success: false, message: 'User must belong to a company' });
     }
 
     const savedFilter = await SavedFilter.findOne({
-      _id: req.params.id,
-      companyId: user.companyId,
-      userId: user._id
+      where: { id: req.params.id, companyId: user.companyId, userId: user.id }
     });
-
     if (!savedFilter) {
       return res.status(404).json({ success: false, message: 'Saved filter not found' });
     }
 
     if (req.body.name?.trim()) savedFilter.name = req.body.name.trim();
-    if (req.body.filters && typeof req.body.filters === 'object') {
-      savedFilter.filters = req.body.filters;
-    }
+    if (req.body.filters && typeof req.body.filters === 'object') savedFilter.filters = req.body.filters;
 
     await savedFilter.save();
-    return res.status(200).json({ success: true, savedFilter });
+    return res.status(200).json({ success: true, savedFilter: toApiDoc(savedFilter) });
   } catch (error) {
     console.error('Update saved filter error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -78,18 +74,15 @@ export const updateSavedFilter = async (req, res) => {
 
 export const deleteSavedFilter = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user?.companyId) {
       return res.status(400).json({ success: false, message: 'User must belong to a company' });
     }
 
-    const savedFilter = await SavedFilter.findOneAndDelete({
-      _id: req.params.id,
-      companyId: user.companyId,
-      userId: user._id
+    const deleted = await SavedFilter.destroy({
+      where: { id: req.params.id, companyId: user.companyId, userId: user.id }
     });
-
-    if (!savedFilter) {
+    if (!deleted) {
       return res.status(404).json({ success: false, message: 'Saved filter not found' });
     }
 
