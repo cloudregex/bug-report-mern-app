@@ -20,6 +20,7 @@ import subscriptionRoutes from './routes/subscriptionRoutes.js';
 import auditRoutes from './routes/auditRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
 import securityRoutes from './routes/securityRoutes.js';
+import rateLimiter from './middleware/rateLimiter.js';
 
 import { initSocket } from './socket.js';
 import { seedAdminUser, seedSuperAdmin } from './controllers/authController.js';
@@ -43,6 +44,9 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// Apply rate limiting globally to all API routes
+app.use('/api', rateLimiter);
 
 app.use('/api', authRoutes);
 app.use('/api/company', companyRoutes);
