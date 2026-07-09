@@ -19,14 +19,20 @@ A full-stack MERN bug and issue tracking platform with multi-tenant company supp
 - Comments with @mentions and file attachments
 - Real-time ticket updates via Socket.IO
 
+### Client Portal & Issue Reporting
+- Dedicated Client Portal dashboard for external clients to view and track their reported items
+- Submit project issues with a title, description, and optional screenshot image attachments
+- Real-time conversion of client reports to standard backlog tickets (Admins & Project Heads)
+- Automatic mapping of client issue images to standard ticket attachments
+
 ### Multi-Tenant Organization
 - Company registration and onboarding flow
 - Role-based access: **Super Admin**, **Admin**, **Employee**, **Client**
-- Employee management (invite, view, disable)
-- Project creation with team membership
+- User directories for managing employee and client directory directories (invite, view details, activate/disable status)
+- Project creation with flexible team membership controls for employees and clients
 
 ### Dashboards & Analytics
-- Role-specific dashboards (Admin, Employee)
+- Role-specific dashboards (Admin, Employee, Client)
 - Ticket metrics, charts, and recent activity
 - Project-level dashboard panels
 - Live dashboard refresh over WebSockets
@@ -38,7 +44,7 @@ A full-stack MERN bug and issue tracking platform with multi-tenant company supp
 
 ### SaaS & Billing
 - Subscription plans (Free, Pro) with usage limits
-- Usage tracking for projects, employees, storage, and monthly tickets
+- Usage tracking for projects, employees (excluding clients), storage, and monthly tickets
 - Billing page with plan summary and upgrade prompts
 
 ### Security & Audit
@@ -47,6 +53,7 @@ A full-stack MERN bug and issue tracking platform with multi-tenant company supp
 - Active session management and revocation
 - Audit log for sensitive actions
 - Security dashboard with failed-login trends (Admin only)
+- Redis rate limiter startup timeout (graceful 5s connection check fallback to Memory limiting)
 
 ### Platform Admin
 - Super Admin SaaS dashboard for cross-company oversight
@@ -164,6 +171,7 @@ All protected routes require a `Bearer` token in the `Authorization` header.
 | `/api/audit-logs` | Audit trail |
 | `/api/sessions` | Session management |
 | `/api/security` | Security metrics |
+| `/api/client-issues` | Client issue reporting and conversion |
 
 Static uploads are served at `/uploads`.
 
@@ -184,9 +192,9 @@ The backend shares the same port for REST and WebSockets. Clients authenticate w
 | Role | Access |
 |------|--------|
 | **SUPER_ADMIN** | Platform SaaS dashboard; no company required |
-| **ADMIN** | Full company access: employees, security, billing, projects, tickets |
-| **EMPLOYEE** | Projects and tickets assigned to them |
-| **CLIENT** | Limited external access (schema support) |
+| **ADMIN** | Full company access: employees, clients, security, billing, projects, tickets |
+| **EMPLOYEE** | Projects, tickets, and clients directory access |
+| **CLIENT** | Limited external portal access: view assigned projects, report issues (with screenshots), and track conversion to tickets |
 
 ## Scripts
 
