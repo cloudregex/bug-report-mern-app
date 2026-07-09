@@ -6,6 +6,7 @@ import Badge from '../components/ui/Badge';
 import Card from '../components/ui/Card';
 import AdminDashboard from '../components/dashboard/AdminDashboard';
 import EmployeeDashboard from '../components/dashboard/EmployeeDashboard';
+import ClientDashboard from '../components/dashboard/ClientDashboard';
 import { useDashboardRefresh } from '../hooks/useDashboardRefresh';
 import { API_BASE_URL } from '../config';
 
@@ -17,6 +18,10 @@ export default function Dashboard() {
   const isAdmin = user?.role === 'ADMIN';
 
   const fetchDashboard = useCallback(async () => {
+    if (user?.role === 'CLIENT') {
+      setIsLoading(false);
+      return; // Clients load their own data inside ClientDashboard
+    }
     const token = localStorage.getItem('token');
     const endpoint = isAdmin ? '/dashboard/company' : '/dashboard/me';
     try {
@@ -30,7 +35,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [isAdmin]);
+  }, [isAdmin, user]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -43,33 +48,39 @@ export default function Dashboard() {
     <PageShell>
       <div className="animate-fade-up mb-8">
         <h1 className="section-title">
-          {isAdmin ? 'Admin Dashboard' : 'My Dashboard'}
+          {isAdmin ? 'Admin Dashboard' : user?.role === 'CLIENT' ? 'Client Portal' : 'My Dashboard'}
         </h1>
         <p className="section-sub">
-          Good to see you, <strong>{user?.name?.split(' ')[0]}</strong> — live workspace analytics.
+          {user?.role === 'CLIENT' 
+            ? <>Welcome, <strong>{user?.name?.split(' ')[0]}</strong> — report and track your project issues.</>
+            : <>Good to see you, <strong>{user?.name?.split(' ')[0]}</strong> — live workspace analytics.</>}
         </p>
       </div>
 
       {isAdmin ? (
         <AdminDashboard data={dashboard} isLoading={isLoading} />
+      ) : user?.role === 'CLIENT' ? (
+        <ClientDashboard />
       ) : (
         <EmployeeDashboard data={dashboard} isLoading={isLoading} />
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 animate-fade-up">
-        <Card hover className="!p-5" onClick={() => navigate('/projects')}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="stat-card-icon"><FolderKanban size={18} /></div>
-              <div>
-                <p className="font-bold text-sm">Manage Projects</p>
-                <p className="text-xs text-muted-foreground mt-0.5">View project workspaces</p>
+      {user?.role !== 'CLIENT' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8 animate-fade-up">
+          <Card hover className="!p-5" onClick={() => navigate('/projects')}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="stat-card-icon"><FolderKanban size={18} /></div>
+                <div>
+                  <p className="font-bold text-sm">Manage Projects</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">View project workspaces</p>
+                </div>
               </div>
+              <ArrowRight size={18} className="text-primary" />
             </div>
-            <ArrowRight size={18} className="text-primary" />
-          </div>
-        </Card>
-      </div>
+          </Card>
+        </div>
+      )}
 
       <div className="text-center mt-8 animate-fade-up">
         <Badge variant={isAdmin ? 'active' : 'open'}>{user?.role} account</Badge>
@@ -77,3 +88,4 @@ export default function Dashboard() {
     </PageShell>
   );
 }
+

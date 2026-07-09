@@ -14,10 +14,21 @@ const sharedNavItems = [
   { path: '/billing', label: 'Billing', icon: CreditCard },
 ];
 
+const employeeNavItems = [
+  ...sharedNavItems,
+  { path: '/clients', label: 'Clients', icon: Users },
+];
+
 const adminNavItems = [
   ...sharedNavItems,
   { path: '/employees', label: 'Employees', icon: Users },
+  { path: '/clients', label: 'Clients', icon: Users },
   { path: '/security', label: 'Security', icon: Shield },
+];
+
+const clientNavItems = [
+  { path: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+  { path: '/projects', label: 'Projects', icon: FolderKanban },
 ];
 
 const superAdminNavItems = [
@@ -44,7 +55,10 @@ export default function AppLayout() {
     ? superAdminNavItems
     : isAdmin
       ? adminNavItems
-      : sharedNavItems;
+      : user?.role === 'CLIENT'
+        ? clientNavItems
+        : employeeNavItems;
+
 
   return (
     <NotificationProvider user={user}>

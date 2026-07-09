@@ -17,6 +17,9 @@ import TicketDetails from './pages/TicketDetails.jsx';
 import SaasDashboard from './pages/SaasDashboard.jsx';
 import Billing from './pages/Billing.jsx';
 import SecurityDashboard from './pages/SecurityDashboard.jsx';
+import Clients from './pages/Clients.jsx';
+import AddClient from './pages/AddClient.jsx';
+import ClientDetails from './pages/ClientDetails.jsx';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -86,6 +89,23 @@ const AdminRoute = () => {
   return <Outlet context={{ user }} />;
 };
 
+const EmployeeOrAdminRoute = () => {
+  const { token, user, isLoading } = useAuthUser();
+
+  if (!token) return <Navigate to="/login" replace />;
+  if (isLoading) {
+    return (
+      <div className="min-h-screen dashboard-bg">
+        <PageLoader message="Verifying credentials..." />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'ADMIN' && user.role !== 'EMPLOYEE') return <Navigate to="/" replace />;
+
+  return <Outlet context={{ user }} />;
+};
+
 const SuperAdminRoute = () => {
   const { token, user, isLoading } = useAuthUser();
 
@@ -125,6 +145,11 @@ export default function App() {
               <Route path="/employees/add" element={<AddEmployee />} />
               <Route path="/employees/:id" element={<EmployeeDetails />} />
               <Route path="/security" element={<SecurityDashboard />} />
+            </Route>
+            <Route element={<EmployeeOrAdminRoute />}>
+              <Route path="/clients" element={<Clients />} />
+              <Route path="/clients/add" element={<AddClient />} />
+              <Route path="/clients/:id" element={<ClientDetails />} />
             </Route>
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/create" element={<CreateProject />} />

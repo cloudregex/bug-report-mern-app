@@ -88,7 +88,7 @@ export const ProjectMember = sequelize.define('ProjectMember', {
   projectId: { type: DataTypes.UUID, allowNull: false },
   userId: { type: DataTypes.UUID, allowNull: false },
   role: {
-    type: DataTypes.ENUM('PROJECT_ADMIN', 'DEVELOPER', 'TESTER', 'VIEWER'),
+    type: DataTypes.ENUM('PROJECT_ADMIN', 'DEVELOPER', 'TESTER', 'VIEWER', 'CLIENT'),
     defaultValue: 'DEVELOPER'
   },
   addedBy: { type: DataTypes.UUID, allowNull: false },
@@ -329,6 +329,31 @@ export const UserSession = sequelize.define('UserSession', {
   ]
 });
 
+export const ClientIssue = sequelize.define('ClientIssue', {
+  id: uuidPk,
+  companyId: { type: DataTypes.UUID, allowNull: false },
+  projectId: { type: DataTypes.UUID, allowNull: false },
+  clientId: { type: DataTypes.UUID, allowNull: false },
+  title: { type: DataTypes.STRING, allowNull: false },
+  description: { type: DataTypes.TEXT, allowNull: true },
+  imageUrl: { type: DataTypes.STRING, allowNull: true },
+  status: {
+    type: DataTypes.ENUM('PENDING', 'CONVERTED', 'REJECTED'),
+    defaultValue: 'PENDING'
+  },
+  convertedTicketId: { type: DataTypes.UUID, allowNull: true },
+  convertedBy: { type: DataTypes.UUID, allowNull: true },
+  convertedAt: { type: DataTypes.DATE, allowNull: true }
+}, {
+  tableName: 'client_issues',
+  indexes: [
+    { fields: ['company_id'] },
+    { fields: ['project_id'] },
+    { fields: ['client_id'] },
+    { fields: ['status'] }
+  ]
+});
+
 // ── Associations ──────────────────────────────────────────────────────────────
 User.belongsTo(Company, { foreignKey: 'companyId', as: 'company' });
 Company.hasMany(User, { foreignKey: 'companyId', as: 'users' });
@@ -392,10 +417,17 @@ AuditLog.belongsTo(Company, { foreignKey: 'companyId', as: 'company' });
 
 UserSession.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+ClientIssue.belongsTo(Company, { foreignKey: 'companyId', as: 'company' });
+ClientIssue.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
+ClientIssue.belongsTo(User, { foreignKey: 'clientId', as: 'client' });
+ClientIssue.belongsTo(Ticket, { foreignKey: 'convertedTicketId', as: 'convertedTicket' });
+ClientIssue.belongsTo(User, { foreignKey: 'convertedBy', as: 'converter' });
+
 [
   User, Company, Plan, Subscription, Project, ProjectMember, Ticket,
   TicketSequence, Comment, Attachment, Activity, Mention, Notification,
-  SavedFilter, Usage, TicketMetrics, AuditLog, LoginAttempt, UserSession
+  SavedFilter, Usage, TicketMetrics, AuditLog, LoginAttempt, UserSession,
+  ClientIssue
 ].forEach(addMongoCompat);
 
 export { sequelize };
@@ -420,5 +452,6 @@ export default {
   TicketMetrics,
   AuditLog,
   LoginAttempt,
-  UserSession
+  UserSession,
+  ClientIssue
 };

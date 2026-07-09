@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
-import { LayoutDashboard, Ticket, Users, Settings, Plus, X, Trash2, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Ticket, Users, Settings, Plus, X, Trash2, BarChart3, AlertCircle, CheckCircle, ExternalLink, Calendar } from 'lucide-react';
 import PageShell from '../components/layout/PageShell';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -39,6 +39,16 @@ export default function ProjectDetails() {
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [memberError, setMemberError] = useState('');
   const [ticketListKey, setTicketListKey] = useState(0);
+
+  const [memberType, setMemberType] = useState('EMPLOYEE');
+  const [clientIssues, setClientIssues] = useState([]);
+  const [isIssuesLoading, setIsIssuesLoading] = useState(false);
+  const [issuesError, setIssuesError] = useState('');
+  const [convertingIssueId, setConvertingIssueId] = useState(null);
+  const [convType, setConvType] = useState('BUG');
+  const [convPriority, setConvPriority] = useState('MEDIUM');
+  const [convAssignee, setConvAssignee] = useState('');
+  const [isConverting, setIsConverting] = useState(false);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [ticketTitle, setTicketTitle] = useState('');
@@ -83,17 +93,21 @@ export default function ProjectDetails() {
     }
   };
 
-  const fetchCompanyEmployees = async () => {
+  const fetchCompanyUsers = async () => {
     if (user.role !== 'ADMIN' && myRole !== 'PROJECT_ADMIN') return;
     const token = localStorage.getItem('token');
+    const endpoint = memberType === 'EMPLOYEE' ? '/users/employees' : '/users/clients';
     try {
-      const response = await fetch(`${API_BASE_URL}/users/employees`, {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      if (response.ok && data.success) setCompanyUsers(data.employees || []);
+      if (response.ok && data.success) {
+        const list = memberType === 'EMPLOYEE' ? data.employees : data.clients;
+        setCompanyUsers(list || []);
+      }
     } catch (err) {
-      console.error('Failed to load company employees:', err);
+      console.error('Failed to load company users:', err);
     }
   };
 
@@ -103,8 +117,71 @@ export default function ProjectDetails() {
   }, [id]);
 
   useEffect(() => {
-    if (activeTab === 'members') fetchCompanyEmployees();
-  }, [activeTab, myRole]);
+    if (activeTab === 'members') fetchCompanyUsers();
+  }, [activeTab, myRole, memberType]);
+
+  const fetchProjectClientIssues = async () => {
+    setIsIssuesLoading(true);
+    const token = localStorage.getItem('token');
+    try {
+      const response = await fetch(`${API_BASE_URL}/client-issues?projectId=${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (response.ok && data.success) setClientIssues(data.clientIssues || []);
+    } catch (err) {
+      setIssuesError(err.message);
+    } finally {
+      setIsIssuesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'client-issues') fetchProjectClientIssues();
+  }, [activeTab, id]);
+
+  const handleConvertIssue = async (issueId) => {
+    setIsConverting(true);
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API_BASE_URL}/client-issues/${issueId}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          type: convType,
+          priority: convPriority,
+          assigneeId: convAssignee || null
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Conversion failed');
+      alert('Issue converted to ticket successfully!');
+      setConvertingIssueId(null);
+      setConvAssignee('');
+      fetchProjectClientIssues();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const handleRejectIssue = async (issueId) => {
+    if (!window.confirm('Are you sure you want to reject this client issue?')) return;
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API_BASE_URL}/client-issues/${issueId}/reject`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Rejection failed');
+      alert('Issue rejected successfully');
+      fetchProjectClientIssues();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 
   const hasAdminPrivilege = user.role === 'ADMIN' || myRole === 'PROJECT_ADMIN';
 
@@ -193,11 +270,12 @@ export default function ProjectDetails() {
     setMemberError('');
     setIsAddingMember(true);
     const token = localStorage.getItem('token');
+    const roleToSend = memberType === 'CLIENT' ? 'CLIENT' : selectedRole;
     try {
       const response = await fetch(`${API_BASE_URL}/projects/${id}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ userId: selectedUserId, role: selectedRole })
+        body: JSON.stringify({ userId: selectedUserId, role: roleToSend })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Failed to add member');
@@ -284,6 +362,7 @@ export default function ProjectDetails() {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     ...(hasAdminPrivilege ? [{ id: 'dashboard', label: 'Dashboard', icon: BarChart3 }] : []),
     { id: 'tickets', label: 'Tickets', icon: Ticket },
+    { id: 'client-issues', label: 'Client Issues', icon: AlertCircle },
     { id: 'members', label: 'Members', icon: Users },
     ...(hasAdminPrivilege ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];
@@ -413,24 +492,41 @@ export default function ProjectDetails() {
 
           {hasAdminPrivilege && (
             <Card className="p-6">
-              <h4 className="font-bold text-base mb-4">Add Project Member</h4>
+              <div className="flex gap-4 border-b pb-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => { setMemberType('EMPLOYEE'); setSelectedUserId(''); }}
+                  className={`pb-1 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${memberType === 'EMPLOYEE' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}
+                >
+                  Add Employee
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMemberType('CLIENT'); setSelectedUserId(''); }}
+                  className={`pb-1 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${memberType === 'CLIENT' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}
+                >
+                  Add Client
+                </button>
+              </div>
               <form onSubmit={handleAddMember} className="flex flex-col sm:flex-row gap-4 items-end">
-                <div className="w-full sm:w-1/2">
-                  <Select label="Choose Employee" value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)} disabled={isAddingMember}>
-                    <option value="">Select Employee</option>
-                    {companyUsers.map(emp => (
-                      <option key={emp._id} value={emp._id}>{emp.name} ({emp.email})</option>
+                <div className="w-full sm:flex-1">
+                  <Select label={memberType === 'EMPLOYEE' ? "Choose Employee" : "Choose Client"} value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)} disabled={isAddingMember}>
+                    <option value="">{memberType === 'EMPLOYEE' ? "Select Employee" : "Select Client"}</option>
+                    {companyUsers.map(user => (
+                      <option key={user._id} value={user._id}>{user.name} ({user.email})</option>
                     ))}
                   </Select>
                 </div>
-                <div className="w-full sm:w-1/3">
-                  <Select label="Project Role" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)} disabled={isAddingMember}>
-                    <option value="PROJECT_ADMIN">Project Admin</option>
-                    <option value="DEVELOPER">Developer</option>
-                    <option value="TESTER">Tester</option>
-                    <option value="VIEWER">Viewer</option>
-                  </Select>
-                </div>
+                {memberType === 'EMPLOYEE' && (
+                  <div className="w-full sm:w-1/3">
+                    <Select label="Project Role" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)} disabled={isAddingMember}>
+                      <option value="PROJECT_ADMIN">Project Admin</option>
+                      <option value="DEVELOPER">Developer</option>
+                      <option value="TESTER">Tester</option>
+                      <option value="VIEWER">Viewer</option>
+                    </Select>
+                  </div>
+                )}
                 <Button type="submit" size="auto" disabled={isAddingMember || !selectedUserId} loading={isAddingMember} className="w-full sm:w-auto">
                   {isAddingMember ? 'Adding...' : 'Add Member'}
                 </Button>
@@ -451,7 +547,7 @@ export default function ProjectDetails() {
                     <p className="text-sm text-muted-foreground">{record.userId?.email}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {hasAdminPrivilege && !isSelf ? (
+                    {hasAdminPrivilege && !isSelf && record.role !== 'CLIENT' ? (
                       <select value={record.role} onChange={(e) => handleChangeRole(record._id, e.target.value)} className="filter-select">
                         <option value="PROJECT_ADMIN">Project Admin</option>
                         <option value="DEVELOPER">Developer</option>
@@ -471,6 +567,134 @@ export default function ProjectDetails() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'client-issues' && (
+        <div className="space-y-6 animate-fade-up">
+          <ErrorBanner>{issuesError}</ErrorBanner>
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="font-extrabold text-lg">Client Reported Issues</h3>
+              <p className="text-xs text-muted-foreground">Review and convert client reports to tickets</p>
+            </div>
+          </div>
+
+          {isIssuesLoading ? (
+            <PageLoader />
+          ) : clientIssues.length === 0 ? (
+            <EmptyState
+              icon={AlertCircle}
+              title="No client issues"
+              description="No client issues have been reported for this project yet."
+            />
+          ) : (
+            <div className="space-y-4 border-t pt-4">
+              {clientIssues.map((issue) => (
+                <Card key={issue._id} className="p-6 space-y-4">
+                  <div className="flex justify-between items-start flex-wrap gap-2 border-b pb-3">
+                    <div>
+                      <h4 className="font-bold text-base leading-snug">{issue.title}</h4>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Reported by: <span className="font-semibold text-primary">{issue.client?.name}</span> ({issue.client?.email}) on {new Date(issue.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    </div>
+                    <div>
+                      {issue.status === 'PENDING' && <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Pending Review</span>}
+                      {issue.status === 'CONVERTED' && <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Converted</span>}
+                      {issue.status === 'REJECTED' && <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">Rejected</span>}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row gap-4">
+                    {issue.imageUrl && (
+                      <div className="w-full md:w-48 shrink-0">
+                        <a href={`http://localhost:5000${issue.imageUrl}`} target="_blank" rel="noopener noreferrer" className="group block relative rounded-lg overflow-hidden border bg-muted">
+                          <img src={`http://localhost:5000${issue.imageUrl}`} alt="Issue Screenshot" className="w-full h-32 object-cover group-hover:scale-105 transition-all" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all text-white text-xs font-semibold gap-1">
+                            View Image <ExternalLink size={12} />
+                          </div>
+                        </a>
+                      </div>
+                    )}
+                    <div className="flex-1 space-y-3">
+                      <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                        {issue.description || <span className="text-muted-foreground italic">No description provided.</span>}
+                      </p>
+
+                      {issue.status === 'PENDING' && hasAdminPrivilege && (
+                        <div className="pt-3 border-t">
+                          {convertingIssueId === issue._id ? (
+                            <form onSubmit={(e) => { e.preventDefault(); handleConvertIssue(issue._id); }} className="p-4 bg-muted/30 rounded-lg space-y-4 border border-dashed animate-fade-in max-w-xl">
+                              <h5 className="font-bold text-sm">Convert to Ticket Options</h5>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <Select label="Type" value={convType} onChange={(e) => setConvType(e.target.value)} disabled={isConverting}>
+                                  <option value="BUG">Bug</option>
+                                  <option value="TASK">Task</option>
+                                  <option value="FEATURE">Feature</option>
+                                  <option value="IMPROVEMENT">Improvement</option>
+                                  <option value="EPIC">Epic</option>
+                                </Select>
+                                <Select label="Priority" value={convPriority} onChange={(e) => setConvPriority(e.target.value)} disabled={isConverting}>
+                                  <option value="LOW">Low</option>
+                                  <option value="MEDIUM">Medium</option>
+                                  <option value="HIGH">High</option>
+                                  <option value="CRITICAL">Critical</option>
+                                  <option value="BLOCKER">Blocker</option>
+                                </Select>
+                                <Select label="Assignee" value={convAssignee} onChange={(e) => setConvAssignee(e.target.value)} disabled={isConverting}>
+                                  <option value="">Unassigned</option>
+                                  {members.map(m => m.userId && m.role !== 'CLIENT' && (
+                                    <option key={m._id} value={m.userId._id}>{m.userId.name} ({m.role})</option>
+                                  ))}
+                                </Select>
+                              </div>
+                              <div className="flex gap-3 pt-2">
+                                <Button type="button" variant="ghost" size="auto" onClick={() => setConvertingIssueId(null)} disabled={isConverting}>Cancel</Button>
+                                <Button type="submit" variant="primary" size="auto" loading={isConverting} disabled={isConverting}>Convert Issue</Button>
+                              </div>
+                            </form>
+                          ) : (
+                            <div className="flex gap-3">
+                              <Button type="button" variant="primary" size="auto" onClick={() => {
+                                setConvertingIssueId(issue._id);
+                                setConvType('BUG');
+                                setConvPriority('MEDIUM');
+                                setConvAssignee('');
+                              }}>Convert to Ticket</Button>
+                              <Button type="button" variant="outline" size="auto" onClick={() => handleRejectIssue(issue._id)} className="!text-destructive !border-destructive/30 hover:!bg-destructive/10">Reject</Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {issue.status === 'CONVERTED' && issue.convertedTicket && (
+                        <div className="flex items-center gap-2 mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs w-fit">
+                          <CheckCircle size={14} className="shrink-0 text-emerald-600" />
+                          <div>
+                            <span>Converted to Ticket: </span>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/tickets/${issue.convertedTicket._id || issue.convertedTicketId}`)}
+                              className="font-bold underline cursor-pointer text-emerald-700 hover:text-emerald-900"
+                            >
+                              {issue.convertedTicket.ticketNumber}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {issue.status === 'REJECTED' && (
+                        <div className="text-xs text-rose-700 bg-rose-50 border border-rose-100 p-2.5 rounded-lg w-fit">
+                          This issue was rejected by the project administration.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

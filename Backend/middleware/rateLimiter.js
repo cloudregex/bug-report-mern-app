@@ -23,35 +23,58 @@ const initRedis = async () => {
   const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
   console.log(`[RateLimiter] Initializing Redis client targeting ${redisUrl}...`);
 
+  const startTime = Date.now();
+  let hasGivenUp = false;
+
   redisClient = createClient({
     url: redisUrl,
     socket: {
       connectTimeout: 5000, // 5 seconds
       reconnectStrategy: (retries) => {
-        // Try reconnecting, cap at 3000ms delay
-        const delay = Math.min(retries * 500, 3000);
-        console.warn(`[RateLimiter] Redis offline. Reconnecting in ${delay}ms...`);
+        if (Date.now() - startTime > 5000) {
+          hasGivenUp = true;
+          return false; // stops reconnection
+        }
+        // Try reconnecting with a short delay (up to 1000ms)
+        const delay = Math.min(retries * 500, 1000);
         return delay;
       }
     }
   });
 
+  const timeoutId = setTimeout(async () => {
+    if (!isRedisConnected) {
+      hasGivenUp = true;
+      console.warn('[RateLimiter] Redis connection timeout (5s) reached. Disabling Redis and running in memory-only mode.');
+      try {
+        await redisClient.disconnect();
+      } catch (err) {
+        // ignore errors
+      }
+    }
+  }, 5000);
+
   redisClient.on('connect', () => {
-    console.log('[RateLimiter] Redis connecting...');
+    if (!hasGivenUp) console.log('[RateLimiter] Redis connecting...');
   });
 
   redisClient.on('ready', () => {
     console.log('[RateLimiter] Redis connected and ready. Activating Redis rate limiting.');
     isRedisConnected = true;
+    clearTimeout(timeoutId);
   });
 
   redisClient.on('error', (err) => {
-    console.error('[RateLimiter] Redis Client Error:', err.message);
+    if (!hasGivenUp) {
+      console.error('[RateLimiter] Redis Client Error:', err.message);
+    }
     isRedisConnected = false;
   });
 
   redisClient.on('end', () => {
-    console.warn('[RateLimiter] Redis connection closed. Falling back to Memory rate limiting.');
+    if (!hasGivenUp) {
+      console.warn('[RateLimiter] Redis connection closed. Falling back to Memory rate limiting.');
+    }
     isRedisConnected = false;
   });
 
@@ -73,7 +96,9 @@ const initRedis = async () => {
       legacyHeaders: false,
     });
   } catch (err) {
-    console.error('[RateLimiter] Failed to connect to Redis during startup. Falling back to Memory rate limiting.', err.message);
+    if (!hasGivenUp) {
+      console.error('[RateLimiter] Failed to connect to Redis during startup. Falling back to Memory rate limiting.', err.message);
+    }
     isRedisConnected = false;
   }
 };

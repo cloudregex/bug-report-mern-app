@@ -21,6 +21,7 @@ import auditRoutes from './routes/auditRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
 import securityRoutes from './routes/securityRoutes.js';
 import rateLimiter from './middleware/rateLimiter.js';
+import clientIssueRoutes from './routes/clientIssueRoutes.js';
 
 import { initSocket } from './socket.js';
 import { seedAdminUser, seedSuperAdmin } from './controllers/authController.js';
@@ -63,6 +64,7 @@ app.use('/api', subscriptionRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/security', securityRoutes);
+app.use('/api/client-issues', clientIssueRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Bug Tracking System API is running.' });
@@ -78,6 +80,14 @@ const startServer = async () => {
 
     await sequelize.sync();
     console.log('Database schema synchronized.');
+
+    try {
+      await sequelize.query("ALTER TABLE users MODIFY COLUMN role ENUM('SUPER_ADMIN', 'ADMIN', 'EMPLOYEE', 'CLIENT') DEFAULT 'ADMIN'");
+      await sequelize.query("ALTER TABLE project_members MODIFY COLUMN role ENUM('PROJECT_ADMIN', 'DEVELOPER', 'TESTER', 'VIEWER', 'CLIENT') DEFAULT 'DEVELOPER'");
+      console.log('Database ENUM columns updated successfully.');
+    } catch (enumErr) {
+      console.warn('Enum column update warning:', enumErr.message);
+    }
 
     await seedAdminUser();
     await seedPlans();
