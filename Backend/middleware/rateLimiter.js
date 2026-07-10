@@ -81,6 +81,11 @@ const initRedis = async () => {
   try {
     await redisClient.connect();
 
+    if (!isRedisConnected || hasGivenUp) {
+      console.warn('[RateLimiter] Redis connection not active or given up. Skipping Redis rate limiter initialization.');
+      return;
+    }
+
     // Create the Redis-backed rate limiter
     redisLimiter = rateLimit({
       store: new RedisStore({
