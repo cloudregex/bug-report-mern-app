@@ -10,7 +10,7 @@ import Avatar from '../components/ui/Avatar';
 import { statusBadgeClass } from '../components/ui/Badge';
 import { PageLoader } from '../components/ui/Spinner';
 
-const API_BASE_URL = 'http://localhost:5000/api/users';
+import { API_BASE_URL } from '../config.js';
 
 export default function Employees() {
   const [employees, setEmployees] = useState([]);
@@ -22,7 +22,7 @@ export default function Employees() {
     const load = async () => {
       const token = localStorage.getItem('token');
       try {
-        const res  = await fetch(`${API_BASE_URL}/employees`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const res  = await fetch(`${API_BASE_URL}/users/employees`, { headers: { 'Authorization': `Bearer ${token}` } });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to load employees');
         setEmployees(data.employees || []);

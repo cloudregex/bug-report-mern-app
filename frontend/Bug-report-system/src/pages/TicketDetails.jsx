@@ -12,7 +12,7 @@ import { Select } from '../components/ui/Input';
 import Spinner, { PageLoader } from '../components/ui/Spinner';
 import MentionInput, { renderCommentWithMentions } from '../components/comments/MentionInput';
 import { useNotifications } from '../context/NotificationContext';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, BASE_URL } from '../config';
 
 export default function TicketDetails() {
   const { id } = useParams();
@@ -537,7 +537,7 @@ export default function TicketDetails() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-border/40">
                     {attachments.map((att) => {
                       const isImage = att.mimeType && att.mimeType.startsWith('image/');
-                      const fileUrl = att.fileUrl.startsWith('http') ? att.fileUrl : `http://localhost:5000${att.fileUrl}`;
+                      const fileUrl = att.fileUrl.startsWith('http') ? att.fileUrl : `${BASE_URL}${att.fileUrl}`;
 
                       return (
                         <div key={att._id} className="flex items-center gap-3 p-3 bg-muted/10 border border-border/40 rounded-xl group relative">

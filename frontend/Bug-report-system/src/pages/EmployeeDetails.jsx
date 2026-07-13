@@ -10,7 +10,7 @@ import EmptyState from '../components/ui/EmptyState';
 import Avatar from '../components/ui/Avatar';
 import { PageLoader } from '../components/ui/Spinner';
 
-const API_BASE_URL = 'http://localhost:5000/api/users';
+import { API_BASE_URL } from '../config.js';
 
 export default function EmployeeDetails() {
   const { id } = useParams();
@@ -24,7 +24,7 @@ export default function EmployeeDetails() {
     const load = async () => {
       const token = localStorage.getItem('token');
       try {
-        const res  = await fetch(`${API_BASE_URL}/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const res  = await fetch(`${API_BASE_URL}/users/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to load employee');
         setEmployee(data.employee);
@@ -41,7 +41,7 @@ export default function EmployeeDetails() {
     const next = employee.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
     try {
       const token = localStorage.getItem('token');
-      const res   = await fetch(`${API_BASE_URL}/${id}/status`, {
+      const res   = await fetch(`${API_BASE_URL}/users/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ status: next })

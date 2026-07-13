@@ -7,9 +7,7 @@ import Badge from '../ui/Badge';
 import ErrorBanner from '../ui/ErrorBanner';
 import { PageLoader } from '../ui/Spinner';
 import { priorityBadgeClass, ticketStatusBadgeClass } from '../ui/Badge';
-
-const API_BASE_URL = 'http://localhost:5000/api';
-
+import { API_BASE_URL } from '../../config.js';
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
   { value: 'BACKLOG', label: 'Backlog' },

@@ -8,7 +8,7 @@ import { Input, Textarea, Select } from '../ui/Input';
 import ErrorBanner from '../ui/ErrorBanner';
 import EmptyState from '../ui/EmptyState';
 import { PageLoader } from '../ui/Spinner';
-import { API_BASE_URL } from '../../config';
+import { API_BASE_URL, BASE_URL } from '../../config';
 
 export default function ClientDashboard() {
   const [issues, setIssues] = useState([]);
@@ -187,13 +187,13 @@ export default function ClientDashboard() {
                 {issue.imageUrl && (
                   <div className="w-full md:w-48 shrink-0">
                     <a
-                      href={`http://localhost:5000${issue.imageUrl}`}
+                      href={`${BASE_URL}${issue.imageUrl}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="group block relative rounded-lg overflow-hidden border bg-muted"
                     >
                       <img
-                        src={`http://localhost:5000${issue.imageUrl}`}
+                        src={`${BASE_URL}${issue.imageUrl}`}
                         alt="Issue Screenshot"
                         className="w-full h-32 object-cover group-hover:scale-105 transition-all"
                       />

@@ -6,7 +6,7 @@ import Button from '../components/ui/Button';
 import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input } from '../components/ui/Input';
 
-const API_BASE_URL = 'http://localhost:5000/api/users';
+import { API_BASE_URL } from '../config.js';
 
 export default function AddClient() {
   const [name, setName]         = useState('');
@@ -27,7 +27,7 @@ export default function AddClient() {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res   = await fetch(`${API_BASE_URL}/client`, {
+      const res   = await fetch(`${API_BASE_URL}/users/client`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ name, email, password }),

@@ -10,7 +10,7 @@ import EmptyState from '../components/ui/EmptyState';
 import Avatar from '../components/ui/Avatar';
 import { PageLoader } from '../components/ui/Spinner';
 
-const API_BASE_URL = 'http://localhost:5000/api/users';
+import { API_BASE_URL } from '../config.js';
 
 export default function ClientDetails() {
   const { id } = useParams();
@@ -24,7 +24,7 @@ export default function ClientDetails() {
     const load = async () => {
       const token = localStorage.getItem('token');
       try {
-        const res  = await fetch(`${API_BASE_URL}/clients/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const res  = await fetch(`${API_BASE_URL}/users/clients/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to load client');
         setClient(data.client);
@@ -41,7 +41,7 @@ export default function ClientDetails() {
     const next = client.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
     try {
       const token = localStorage.getItem('token');
-      const res   = await fetch(`${API_BASE_URL}/clients/${id}/status`, {
+      const res   = await fetch(`${API_BASE_URL}/users/clients/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ status: next, confirm: true })

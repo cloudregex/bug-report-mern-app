@@ -10,7 +10,7 @@ import Avatar from '../components/ui/Avatar';
 import { statusBadgeClass } from '../components/ui/Badge';
 import { PageLoader } from '../components/ui/Spinner';
 
-const API_BASE_URL = 'http://localhost:5000/api/users';
+import { API_BASE_URL } from '../config.js';
 
 export default function Clients() {
   const [clients, setClients] = useState([]);
@@ -22,7 +22,7 @@ export default function Clients() {
     const load = async () => {
       const token = localStorage.getItem('token');
       try {
-        const res  = await fetch(`${API_BASE_URL}/clients`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const res  = await fetch(`${API_BASE_URL}/users/clients`, { headers: { 'Authorization': `Bearer ${token}` } });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to load clients');
         setClients(data.clients || []);

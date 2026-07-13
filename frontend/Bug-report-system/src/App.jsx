@@ -20,9 +20,7 @@ import SecurityDashboard from './pages/SecurityDashboard.jsx';
 import Clients from './pages/Clients.jsx';
 import AddClient from './pages/AddClient.jsx';
 import ClientDetails from './pages/ClientDetails.jsx';
-
-const API_BASE_URL = 'http://localhost:5000/api';
-
+import { API_BASE_URL } from './config.js';
 const useAuthUser = () => {
   const token = localStorage.getItem('token');
   const [isLoading, setIsLoading] = useState(!!token);

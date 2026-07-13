@@ -14,7 +14,7 @@ import { useDashboardRefresh } from '../hooks/useDashboardRefresh';
 import { PageLoader } from '../components/ui/Spinner';
 import { handleUpgradeResponse } from '../utils/billing';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL, BASE_URL } from '../config.js';
 
 export default function ProjectDetails() {
   const { id } = useParams();
@@ -609,8 +609,8 @@ export default function ProjectDetails() {
                   <div className="flex flex-col md:flex-row gap-4">
                     {issue.imageUrl && (
                       <div className="w-full md:w-48 shrink-0">
-                        <a href={`http://localhost:5000${issue.imageUrl}`} target="_blank" rel="noopener noreferrer" className="group block relative rounded-lg overflow-hidden border bg-muted">
-                          <img src={`http://localhost:5000${issue.imageUrl}`} alt="Issue Screenshot" className="w-full h-32 object-cover group-hover:scale-105 transition-all" />
+                        <a href={`${BASE_URL}${issue.imageUrl}`} target="_blank" rel="noopener noreferrer" className="group block relative rounded-lg overflow-hidden border bg-muted">
+                          <img src={`${BASE_URL}${issue.imageUrl}`} alt="Issue Screenshot" className="w-full h-32 object-cover group-hover:scale-105 transition-all" />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all text-white text-xs font-semibold gap-1">
                             View Image <ExternalLink size={12} />
                           </div>

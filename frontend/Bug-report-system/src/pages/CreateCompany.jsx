@@ -6,7 +6,7 @@ import Button from '../components/ui/Button';
 import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input } from '../components/ui/Input';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_BASE_URL } from '../config.js';
 
 export default function CreateCompany() {
   const [name, setName]     = useState('');
