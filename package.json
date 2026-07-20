@@ -1,0 +1,13 @@
+{
+  "name": "bug-report-mern-app",
+  "version": "1.0.0",
+  "description": "Root project for MERN app",
+  "scripts": {
+    "client": "npm run dev --prefix frontend/Bug-report-system",
+    "server": "npm run dev --prefix Backend",
+    "dev": "concurrently \"npm run server\" \"npm run client\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
