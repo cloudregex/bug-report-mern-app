@@ -6,6 +6,7 @@ import {
 import { NotificationProvider } from '../../context/NotificationContext';
 import NotificationBell from '../notifications/NotificationBell';
 import Avatar from '../ui/Avatar';
+import ConfirmModal from '../ui/ConfirmModal';
 
 const sharedNavItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
@@ -40,6 +41,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const isAdmin = user?.role === 'ADMIN';
 
@@ -47,6 +49,7 @@ export default function AppLayout() {
     exact ? location.pathname === path : location.pathname.startsWith(path);
 
   const handleLogout = () => {
+    setShowLogoutConfirm(false);
     localStorage.removeItem('token');
     navigate('/login');
   };
@@ -108,7 +111,7 @@ export default function AppLayout() {
               <p className="sidebar-user-role">{user?.role}</p>
             </div>
           </div>
-          <button type="button" className="sidebar-logout" onClick={handleLogout}>
+          <button type="button" className="sidebar-logout" onClick={() => setShowLogoutConfirm(true)}>
             <LogOut size={16} strokeWidth={2} />
             <span>Sign out</span>
           </button>
@@ -128,6 +131,18 @@ export default function AppLayout() {
           <Outlet context={{ user }} />
         </div>
       </div>
+      
+      <ConfirmModal
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogout}
+        title="Sign out"
+        message="Are you sure you want to sign out of your account? You will need to log in again to access the system."
+        confirmLabel="Sign out"
+        cancelLabel="Cancel"
+        confirmVariant="danger"
+        icon={LogOut}
+      />
     </div>
     </NotificationProvider>
   );

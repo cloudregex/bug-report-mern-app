@@ -384,8 +384,8 @@ html, body {
   }
 
   /* ── Page Shell ─────────────────────────────────────────────────────── */
-  .page-shell { max-width: 48rem; margin: 0 auto; }
-  .page-shell-wide { max-width: 72rem; }
+  .page-shell { max-width: 100%; margin: 0 auto; }
+  .page-shell-wide { max-width: 100%; }
   .page-shell-padded { padding: 1.5rem 1.25rem 3rem; }
   @media (min-width: 640px) { .page-shell-padded { padding: 2rem 2rem 3rem; } }
 
