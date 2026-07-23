@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  # MySQL Database Service
+  db:
+    image: mysql:8
+    container_name: bug-tracker-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: bug_tracker
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis Cache Service (Rate Limiting)
   redis:
     image: redis:7-alpine
     container_name: bug-tracker-redis
@@ -10,5 +29,45 @@ services:
     volumes:
       - redis_data:/data
 
+  # Node.js Express Backend Service
+  backend:
+    build: ./Backend
+    container_name: bug-tracker-backend
+    restart: always
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=bug_tracker
+      - DB_USER=root
+      - DB_PASSWORD=root123
+      - JWT_SECRET=bug_tracker_super_secret_jwt_key_2026
+      - REDIS_URL=redis://redis:6379
+      - FRONTEND_URL=http://localhost,http://localhost:80,http://127.0.0.1,http://localhost:3000,http://127.0.0.1:3000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - uploads_data:/usr/src/app/uploads
+
+  # React / Vite / Nginx Frontend Service
+  frontend:
+    build:
+      context: ./frontend/Bug-report-system
+      args:
+        - VITE_API_BASE_URL=http://localhost:5001
+    container_name: bug-tracker-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
 volumes:
+  mysql_data:
   redis_data:
+  uploads_data:
