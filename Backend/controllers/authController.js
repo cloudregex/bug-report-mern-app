@@ -339,53 +339,88 @@ export const getUserProfile = async (req, res) => {
 
 export const seedAdminUser = async () => {
   try {
-    const existing = await User.findOne({ where: { email: 'admin@example.com' } });
-    if (existing) return;
+    // Check all four seed users individually
+    const [existingAdmin, existingEmployee, existingSuperAdmin, existingClient] = await Promise.all([
+      User.findOne({ where: { email: 'admin@example.com' } }),
+      User.findOne({ where: { email: 'employee@example.com' } }),
+      User.findOne({ where: { email: 'superadmin@example.com' } }),
+      User.findOne({ where: { email: 'client@example.com' } }),
+    ]);
 
-    // Create admin first so we have a real UUID for company.createdBy (avoids FK violation)
-    const adminPassword = await bcrypt.hash('Admin@123', 10);
-    const admin = await User.create({
-      name: 'Admin User',
-      email: 'admin@example.com',
-      username: 'admin',
-      password: adminPassword,
-      role: 'ADMIN',
-      companyId: null,
-      status: 'ACTIVE'
-    });
+    // All four already exist — nothing to do
+    if (existingAdmin && existingEmployee && existingSuperAdmin && existingClient) return;
 
-    const company = await Company.create({
-      name: 'Citizens Foundation',
-      slug: 'citizens-foundation',
-      createdBy: admin.id
-    });
+    // Ensure the company exists (needed for companyId on member users)
+    let company = await Company.findOne({ where: { slug: 'citizens-foundation' } });
 
-    admin.companyId = company.id;
-    await admin.save();
+    // Create admin if missing (also creates company when needed)
+    let admin = existingAdmin;
+    if (!admin) {
+      const adminPassword = await bcrypt.hash('Admin@123', 10);
+      admin = await User.create({
+        name: 'Admin User',
+        email: 'admin@example.com',
+        username: 'admin',
+        password: adminPassword,
+        role: 'ADMIN',
+        companyId: null,
+        status: 'ACTIVE'
+      });
+    }
 
-    await createSubscriptionForCompany(company.id);
+    if (!company) {
+      company = await Company.create({
+        name: 'Citizens Foundation',
+        slug: 'citizens-foundation',
+        createdBy: admin.id
+      });
+      admin.companyId = company.id;
+      await admin.save();
+      await createSubscriptionForCompany(company.id);
+    } else if (!existingAdmin) {
+      // Admin was just created but company already existed — link them
+      admin.companyId = company.id;
+      await admin.save();
+    }
 
-    const empPassword = await bcrypt.hash('Employee@123', 10);
-    await User.create({
-      name: 'John Employee',
-      email: 'employee@example.com',
-      username: 'john',
-      password: empPassword,
-      role: 'EMPLOYEE',
-      companyId: company.id,
-      status: 'ACTIVE'
-    });
+    if (!existingEmployee) {
+      const empPassword = await bcrypt.hash('Employee@123', 10);
+      await User.create({
+        name: 'John Employee',
+        email: 'employee@example.com',
+        username: 'john',
+        password: empPassword,
+        role: 'EMPLOYEE',
+        companyId: company.id,
+        status: 'ACTIVE'
+      });
+    }
 
-    const superAdminPassword = await bcrypt.hash('SuperAdmin@123', 10);
-    await User.create({
-      name: 'Platform Owner',
-      email: 'superadmin@example.com',
-      username: 'superadmin',
-      password: superAdminPassword,
-      role: 'SUPER_ADMIN',
-      companyId: null,
-      status: 'ACTIVE'
-    });
+    if (!existingSuperAdmin) {
+      const superAdminPassword = await bcrypt.hash('SuperAdmin@123', 10);
+      await User.create({
+        name: 'Platform Owner',
+        email: 'superadmin@example.com',
+        username: 'superadmin',
+        password: superAdminPassword,
+        role: 'SUPER_ADMIN',
+        companyId: null,
+        status: 'ACTIVE'
+      });
+    }
+
+    if (!existingClient) {
+      const clientPassword = await bcrypt.hash('Client@123', 10);
+      await User.create({
+        name: 'Jane Client',
+        email: 'client@example.com',
+        username: 'janeclient',
+        password: clientPassword,
+        role: 'CLIENT',
+        companyId: company.id,
+        status: 'ACTIVE'
+      });
+    }
 
     console.log('');
     console.log('╔══════════════════════════════════════════════════╗');
@@ -395,6 +430,7 @@ export const seedAdminUser = async () => {
     console.log('║─────────────────────────────────────────────────║');
     console.log('║  ADMIN       : admin@example.com / Admin@123     ║');
     console.log('║  EMPLOYEE    : employee@example.com / Employee@123 ║');
+    console.log('║  CLIENT      : client@example.com / Client@123   ║');
     console.log('║  SUPER_ADMIN : superadmin@example.com / SuperAdmin@123 ║');
     console.log('╚══════════════════════════════════════════════════╝');
     console.log('');

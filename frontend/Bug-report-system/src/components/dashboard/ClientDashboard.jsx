@@ -41,7 +41,7 @@ export default function ClientDashboard() {
       setIssues(issuesData.clientIssues || []);
 
       // 2. Fetch Projects Client belongs to
-      const projectsRes = await fetch(`${API_BASE_URL}/projects`, {
+      const projectsRes = await fetch(`${API_BASE_URL}/projects/my`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const projectsData = await projectsRes.json();

@@ -54,6 +54,7 @@ export default function Login() {
   const demoAccounts = [
     { label: 'ADMIN',      variant: 'active',  email: 'admin@example.com',      password: 'Admin@123' },
     { label: 'EMPLOYEE',   variant: 'open',    email: 'employee@example.com',   password: 'Employee@123' },
+    { label: 'CLIENT',     variant: 'invited', email: 'client@example.com',     password: 'Client@123' },
     { label: 'SUPER ADMIN',variant: 'closed',  email: 'superadmin@example.com', password: 'SuperAdmin@123' },
   ];
 
