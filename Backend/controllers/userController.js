@@ -11,6 +11,11 @@ export const createEmployee = async (req, res) => {
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: 'Name is required' });
     if (!email || !email.trim()) return res.status(400).json({ success: false, message: 'Email is required' });
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid email address' });
+    }
+
     const passwordCheck = validatePasswordStrength(password);
     if (!passwordCheck.valid) return res.status(400).json({ success: false, message: passwordCheck.message });
 
@@ -183,6 +188,11 @@ export const createClient = async (req, res) => {
     const { name, email, password } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: 'Name is required' });
     if (!email || !email.trim()) return res.status(400).json({ success: false, message: 'Email is required' });
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid email address' });
+    }
 
     const passwordCheck = validatePasswordStrength(password);
     if (!passwordCheck.valid) return res.status(400).json({ success: false, message: passwordCheck.message });

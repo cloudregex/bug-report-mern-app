@@ -21,6 +21,7 @@ export function ticketStatusBadgeClass(status) {
   const map = {
     BACKLOG: 'closed', TODO: 'open', IN_PROGRESS: 'inprog', IN_REVIEW: 'inprog',
     TESTING: 'inprog', DONE: 'done', CLOSED: 'closed', REOPENED: 'open',
+    PENDING: 'invited', REJECTED: 'critical',
   };
   return `badge ${variants[map[status] || 'open']}`;
 }

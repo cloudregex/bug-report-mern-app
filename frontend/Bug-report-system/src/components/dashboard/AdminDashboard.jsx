@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
-import { Users, FolderKanban, Ticket, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import { Users, FolderKanban, Ticket, AlertTriangle, Clock, CheckCircle, ArrowRight, UserPlus } from 'lucide-react';
 import StatCard from '../ui/StatCard';
+import Card from '../ui/Card';
 import { StatusChart, PriorityChart, CreatedPerDayChart, WorkloadChart, ResolutionKpis } from './DashboardCharts';
 import RecentActivity from './RecentActivity';
 
@@ -32,6 +33,38 @@ export default function AdminDashboard({ data, isLoading }) {
             onClick={stat.path ? () => navigate(stat.path) : undefined}
           />
         ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-scale-in">
+        <Card hover className="!p-5" onClick={() => navigate('/employees/add')}>
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-3">
+              <div className="stat-card-icon" style={{ color: 'oklch(0.48 0.19 258)', backgroundColor: 'oklch(0.48 0.19 258 / 0.1)' }}>
+                <UserPlus size={18} />
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-sm">Add Employee</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Invite a team member to the workspace</p>
+              </div>
+            </div>
+            <ArrowRight size={18} className="text-primary shrink-0" />
+          </div>
+        </Card>
+
+        <Card hover className="!p-5" onClick={() => navigate('/clients/add')}>
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-3">
+              <div className="stat-card-icon" style={{ color: 'oklch(0.52 0.18 145)', backgroundColor: 'oklch(0.52 0.18 145 / 0.1)' }}>
+                <UserPlus size={18} />
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-sm">Add Client</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Register a new client company account</p>
+              </div>
+            </div>
+            <ArrowRight size={18} className="text-primary shrink-0" />
+          </div>
+        </Card>
       </div>
 
       {!isLoading && <ResolutionKpis resolution={d.resolution} />}

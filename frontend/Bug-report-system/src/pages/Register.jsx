@@ -6,6 +6,7 @@ import Button from '../components/ui/Button';
 import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input } from '../components/ui/Input';
 import { API_BASE_URL } from '../config';
+import { validateEmail, validatePasswordStrength } from '../utils/validation';
 
 export default function Register() {
   const [companyName, setCompanyName] = useState('');
@@ -33,6 +34,20 @@ export default function Register() {
 
     if (!companyName.trim() || !name.trim() || !email.trim() || !password || !confirmPassword) {
       setError('Please fill in all fields.');
+      triggerShake();
+      return;
+    }
+
+    const emailCheck = validateEmail(email);
+    if (!emailCheck.valid) {
+      setError(emailCheck.message);
+      triggerShake();
+      return;
+    }
+
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      setError(passwordCheck.message);
       triggerShake();
       return;
     }

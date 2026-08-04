@@ -7,6 +7,7 @@ import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input } from '../components/ui/Input';
 
 import { API_BASE_URL } from '../config.js';
+import { validateEmail, validatePasswordStrength } from '../utils/validation';
 
 export default function AddClient() {
   const [name, setName]         = useState('');
@@ -21,8 +22,18 @@ export default function AddClient() {
     e.preventDefault();
     setError('');
     if (!name.trim())            { setError('Name is required.');                   triggerShake(); return; }
-    if (!email.trim())           { setError('Email is required.');                  triggerShake(); return; }
-    if (password.length < 6)    { setError('Password must be at least 6 chars.');   triggerShake(); return; }
+    const emailCheck = validateEmail(email);
+    if (!emailCheck.valid) {
+      setError(emailCheck.message);
+      triggerShake();
+      return;
+    }
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      setError(passwordCheck.message);
+      triggerShake();
+      return;
+    }
     
     setIsLoading(true);
     try {
@@ -81,12 +92,12 @@ export default function AddClient() {
               label="Password"
               type="password"
               value={password}
-              placeholder="Min. 6 characters"
+              placeholder="Create a strong password"
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
             />
             <p className="text-xs mt-1.5 pl-1 text-muted-foreground">
-              Client will use this password to log in.
+              At least 8 characters with uppercase, lowercase, number, and special character.
             </p>
           </div>
 

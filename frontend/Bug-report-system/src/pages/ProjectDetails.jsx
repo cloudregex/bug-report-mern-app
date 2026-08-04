@@ -362,7 +362,7 @@ export default function ProjectDetails() {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     ...(hasAdminPrivilege ? [{ id: 'dashboard', label: 'Dashboard', icon: BarChart3 }] : []),
     { id: 'tickets', label: 'Tickets', icon: Ticket },
-    { id: 'client-issues', label: 'Client Issues', icon: AlertCircle },
+    ...(user.role !== 'CLIENT' ? [{ id: 'client-issues', label: 'Client Issues', icon: AlertCircle }] : []),
     { id: 'members', label: 'Members', icon: Users },
     ...(hasAdminPrivilege ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];

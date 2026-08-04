@@ -9,22 +9,23 @@ import ErrorBanner from '../components/ui/ErrorBanner';
 import EmptyState from '../components/ui/EmptyState';
 import Avatar from '../components/ui/Avatar';
 import { PageLoader } from '../components/ui/Spinner';
+import ConfirmModal from '../components/ui/ConfirmModal';
 
 import { API_BASE_URL } from '../config.js';
 
 export default function EmployeeDetails() {
   const { id } = useParams();
-  const [employee, setEmployee]   = useState(null);
+  const [employee, setEmployee] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [error, setError]         = useState('');
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
     const load = async () => {
       const token = localStorage.getItem('token');
       try {
-        const res  = await fetch(`${API_BASE_URL}/users/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch(`${API_BASE_URL}/users/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Failed to load employee');
         setEmployee(data.employee);
@@ -34,21 +35,35 @@ export default function EmployeeDetails() {
     load();
   }, [id]);
 
-  const toggleStatus = async () => {
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+
+  const handleToggleStatus = () => {
+    if (employee.status === 'ACTIVE') {
+      setIsConfirmOpen(true);
+    } else {
+      updateEmployeeStatus(false);
+    }
+  };
+
+  const updateEmployeeStatus = async (confirmVal = false) => {
     if (!employee) return;
     setError('');
     setIsUpdating(true);
     const next = employee.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
     try {
       const token = localStorage.getItem('token');
-      const res   = await fetch(`${API_BASE_URL}/users/${id}/status`, {
+      const payload = { status: next };
+      if (confirmVal) payload.confirm = true;
+
+      const res = await fetch(`${API_BASE_URL}/users/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ status: next })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Update failed');
       setEmployee(data.employee);
+      setIsConfirmOpen(false);
     } catch (err) { setError(err.message); }
     finally { setIsUpdating(false); }
   };
@@ -86,11 +101,11 @@ export default function EmployeeDetails() {
           <Card className="px-6 py-5 mb-4">
             <div className="space-y-4">
               {[
-                { label: 'Full Name',  value: employee.name },
-                { label: 'Email',      value: employee.email, mono: true },
-                { label: 'Username',   value: employee.username, mono: true },
-                { label: 'Role',       value: employee.role },
-                { label: 'Joined',     value: employee.createdAt ? new Date(employee.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
+                { label: 'Full Name', value: employee.name },
+                { label: 'Email', value: employee.email, mono: true },
+                { label: 'Username', value: employee.username, mono: true },
+                { label: 'Role', value: employee.role },
+                { label: 'Joined', value: employee.createdAt ? new Date(employee.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' },
               ].map(({ label, value, mono }) => (
                 <div key={label} className="flex justify-between items-start gap-4">
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">{label}</span>
@@ -102,17 +117,27 @@ export default function EmployeeDetails() {
 
           <div className="space-y-3">
             {employee.status === 'ACTIVE'
-              ? <Button onClick={toggleStatus} disabled={isUpdating} variant="danger" loading={isUpdating}>
-                  {isUpdating ? 'Updating...' : 'Disable Account'}
-                </Button>
-              : <Button onClick={toggleStatus} disabled={isUpdating} variant="success" loading={isUpdating}>
-                  {isUpdating ? 'Updating...' : 'Enable Account'}
-                </Button>
+              ? <Button onClick={handleToggleStatus} disabled={isUpdating} variant="danger" loading={isUpdating}>
+                {isUpdating ? 'Updating...' : 'Disable Account'}
+              </Button>
+              : <Button onClick={handleToggleStatus} disabled={isUpdating} variant="success" loading={isUpdating}>
+                {isUpdating ? 'Updating...' : 'Enable Account'}
+              </Button>
             }
             <Button onClick={() => navigate('/employees')} disabled={isUpdating} variant="ghost">
               Back to Employees
             </Button>
           </div>
+
+          <ConfirmModal
+            isOpen={isConfirmOpen}
+            onClose={() => setIsConfirmOpen(false)}
+            onConfirm={() => updateEmployeeStatus(true)}
+            title="Disable Account"
+            message={`Are you sure you want to disable ${employee.name}'s account? They will lose access to the platform immediately.`}
+            confirmLabel="Disable"
+            confirmVariant="danger"
+          />
         </div>
       )}
     </PageShell>

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
+import UserSession from '../models/UserSession.js';
 import { createSubscriptionForCompany } from '../services/subscriptionService.js';
 import { getClientMeta } from '../services/auditService.js';
 import { createAuditLog } from '../services/auditService.js';
@@ -463,5 +464,32 @@ export const seedSuperAdmin = async () => {
     console.log('');
   } catch (error) {
     console.error('Error seeding super admin:', error);
+  }
+};
+
+export const logoutUser = async (req, res) => {
+  try {
+    if (req.user && req.user.tokenId) {
+      const session = await UserSession.findByPk(req.user.tokenId);
+      if (session) {
+        session.isActive = false;
+        await session.save();
+
+        await createAuditLog({
+          companyId: req.user.companyId || null,
+          actorId: req.user.id,
+          entityType: 'SESSION',
+          entityId: session.id,
+          action: 'SESSION_REVOKED',
+          before: { isActive: true, device: session.device },
+          after: { isActive: false },
+          req
+        });
+      }
+    }
+    return res.status(200).json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

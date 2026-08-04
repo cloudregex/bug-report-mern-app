@@ -46,6 +46,13 @@ export const createTicket = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Ticket title is required' });
     }
 
+    if (estimatedHours !== undefined && estimatedHours !== null && estimatedHours !== '') {
+      const hoursNum = Number(estimatedHours);
+      if (isNaN(hoursNum) || hoursNum < 0) {
+        return res.status(400).json({ success: false, message: 'Estimated hours must be a valid non-negative number' });
+      }
+    }
+
     if (req.projectMemberRole === 'VIEWER') {
       return res.status(403).json({ success: false, message: 'Access denied: Viewers cannot create tickets' });
     }
@@ -454,38 +461,121 @@ export const searchTickets = async (req, res) => {
     }
 
     const sortParam = req.query.sort || 'newest';
-    const total = await Ticket.count({ where });
-
     let tickets;
-    if (sortParam === 'priority') {
-      const ranked = await Ticket.findAll({
-        where,
-        attributes: ['id'],
-        order: [
-          [literal("CASE priority WHEN 'BLOCKER' THEN 0 WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END"), 'ASC'],
-          ['createdAt', 'DESC']
-        ],
-        offset,
-        limit
-      });
-      const ticketIds = ranked.map((t) => t.id);
-      const fetched = await Ticket.findAll({ where: { id: { [Op.in]: ticketIds } }, include: ticketIncludes() });
-      const ticketMap = new Map(shapeTickets(fetched).map((t) => [String(t._id), t]));
-      tickets = ticketIds.map((id) => ticketMap.get(String(id))).filter(Boolean);
-    } else {
-      let order = [['createdAt', 'DESC']];
-      if (sortParam === 'oldest') order = [['createdAt', 'ASC']];
-      else if (sortParam === 'updatedAt') order = [['updatedAt', 'DESC']];
-      else if (sortParam === 'dueDate') order = [['dueDate', 'ASC'], ['createdAt', 'DESC']];
+    let total = 0;
 
-      const rows = await Ticket.findAll({
+    if (user.role === 'CLIENT') {
+      where.reporterId = user.id;
+
+      // Fetch all Client Tickets
+      const clientTickets = await Ticket.findAll({
         where,
-        include: ticketIncludes(),
-        order,
-        offset,
-        limit
+        include: ticketIncludes()
       });
-      tickets = shapeTickets(rows);
+
+      // Fetch all Client Issues (Pending or Rejected)
+      const ClientIssue = (await import('../models/ClientIssue.js')).default;
+      const clientIssueWhere = {
+        companyId: user.companyId,
+        projectId: { [Op.in]: accessibleProjectIds },
+        clientId: user.id,
+        status: { [Op.in]: ['PENDING', 'REJECTED'] }
+      };
+
+      if (req.query.status) {
+        if (['PENDING', 'REJECTED'].includes(req.query.status)) {
+          clientIssueWhere.status = req.query.status;
+        } else {
+          clientIssueWhere.status = 'NONE';
+        }
+      }
+
+      if (req.query.search?.trim()) {
+        const term = `%${req.query.search.trim()}%`;
+        clientIssueWhere[Op.or] = [
+          { title: { [Op.like]: term } },
+          { description: { [Op.like]: term } }
+        ];
+      }
+
+      const clientIssues = await ClientIssue.findAll({
+        where: clientIssueWhere
+      });
+
+      const projectIdVal = req.query.project || (accessibleProjectIds.length === 1 ? accessibleProjectIds[0] : null);
+      const project = projectIdVal ? await Project.findByPk(projectIdVal) : null;
+
+      // Shape clientIssues to match Ticket shape
+      const mappedIssues = clientIssues.map((issue) => ({
+        _id: issue.id,
+        ticketNumber: `SUB-${issue.id.substring(0, 4).toUpperCase()}`,
+        title: issue.title,
+        description: issue.description,
+        type: 'BUG',
+        priority: 'MEDIUM',
+        status: issue.status,
+        assigneeId: null,
+        projectId: project ? { id: project.id, name: project.name } : { id: issue.projectId },
+        isClientIssueDraft: true,
+        createdAt: issue.createdAt,
+        updatedAt: issue.updatedAt
+      }));
+
+      // Merge and sort
+      const shapedTickets = shapeTickets(clientTickets);
+      const merged = [...shapedTickets, ...mappedIssues];
+
+      if (sortParam === 'oldest') {
+        merged.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      } else if (sortParam === 'priority') {
+        const priorityOrder = { BLOCKER: 0, CRITICAL: 1, HIGH: 2, MEDIUM: 3, LOW: 4 };
+        merged.sort((a, b) => {
+          const valA = priorityOrder[a.priority] ?? 5;
+          const valB = priorityOrder[b.priority] ?? 5;
+          if (valA !== valB) return valA - valB;
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        });
+      } else if (sortParam === 'updatedAt') {
+        merged.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+      } else {
+        merged.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      }
+
+      total = merged.length;
+      tickets = merged.slice(offset, offset + limit);
+    } else {
+      total = await Ticket.count({ where });
+
+      if (sortParam === 'priority') {
+        const ranked = await Ticket.findAll({
+          where,
+          attributes: ['id'],
+          order: [
+            [literal("CASE priority WHEN 'BLOCKER' THEN 0 WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END"), 'ASC'],
+            ['createdAt', 'DESC']
+          ],
+          offset,
+          limit
+        });
+        const ticketIds = ranked.map((t) => t.id);
+        const fetched = await Ticket.findAll({ where: { id: { [Op.in]: ticketIds } }, include: ticketIncludes() });
+        const ticketMap = new Map(shapeTickets(fetched).map((t) => [String(t._id), t]));
+        tickets = ticketIds.map((id) => ticketMap.get(String(id))).filter(Boolean);
+      } else {
+        let order = [['createdAt', 'DESC']];
+        if (sortParam === 'oldest') order = [['createdAt', 'ASC']];
+        else if (sortParam === 'updatedAt') order = [['updatedAt', 'DESC']];
+        else if (sortParam === 'dueDate') order = [['dueDate', 'ASC'], ['createdAt', 'DESC']];
+
+        const rows = await Ticket.findAll({
+          where,
+          include: ticketIncludes(),
+          order,
+          offset,
+          limit
+        });
+        tickets = shapeTickets(rows);
+      }
     }
 
     return res.status(200).json({

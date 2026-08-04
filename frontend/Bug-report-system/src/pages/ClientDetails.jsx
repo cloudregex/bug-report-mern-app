@@ -9,6 +9,7 @@ import ErrorBanner from '../components/ui/ErrorBanner';
 import EmptyState from '../components/ui/EmptyState';
 import Avatar from '../components/ui/Avatar';
 import { PageLoader } from '../components/ui/Spinner';
+import ConfirmModal from '../components/ui/ConfirmModal';
 
 import { API_BASE_URL } from '../config.js';
 
@@ -34,21 +35,35 @@ export default function ClientDetails() {
     load();
   }, [id]);
 
-  const toggleStatus = async () => {
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+
+  const handleToggleStatus = () => {
+    if (client.status === 'ACTIVE') {
+      setIsConfirmOpen(true);
+    } else {
+      updateClientStatus(false);
+    }
+  };
+
+  const updateClientStatus = async (confirmVal = false) => {
     if (!client) return;
     setError('');
     setIsUpdating(true);
     const next = client.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
     try {
       const token = localStorage.getItem('token');
+      const payload = { status: next };
+      if (confirmVal) payload.confirm = true;
+
       const res   = await fetch(`${API_BASE_URL}/users/clients/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ status: next, confirm: true })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Update failed');
       setClient(data.client);
+      setIsConfirmOpen(false);
     } catch (err) { setError(err.message); }
     finally { setIsUpdating(false); }
   };
@@ -102,10 +117,10 @@ export default function ClientDetails() {
 
           <div className="space-y-3">
             {client.status === 'ACTIVE'
-              ? <Button onClick={toggleStatus} disabled={isUpdating} variant="danger" loading={isUpdating}>
+              ? <Button onClick={handleToggleStatus} disabled={isUpdating} variant="danger" loading={isUpdating}>
                   {isUpdating ? 'Updating...' : 'Disable Account'}
                 </Button>
-              : <Button onClick={toggleStatus} disabled={isUpdating} variant="success" loading={isUpdating}>
+              : <Button onClick={handleToggleStatus} disabled={isUpdating} variant="success" loading={isUpdating}>
                   {isUpdating ? 'Updating...' : 'Enable Account'}
                 </Button>
             }
@@ -113,6 +128,16 @@ export default function ClientDetails() {
               Back to Clients
             </Button>
           </div>
+
+          <ConfirmModal
+            isOpen={isConfirmOpen}
+            onClose={() => setIsConfirmOpen(false)}
+            onConfirm={() => updateClientStatus(true)}
+            title="Disable Account"
+            message={`Are you sure you want to disable ${client.name}'s account? They will lose access to the platform immediately.`}
+            confirmLabel="Disable"
+            confirmVariant="danger"
+          />
         </div>
       )}
     </PageShell>

@@ -7,6 +7,7 @@ import Button from '../components/ui/Button';
 import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input } from '../components/ui/Input';
 import { API_BASE_URL } from '../config';
+import { validateEmail, validatePasswordStrength } from '../utils/validation';
 import { useBilling } from '../hooks/useBilling';
 import { handleUpgradeResponse, isAtLimit, redirectToBilling } from '../utils/billing';
 
@@ -26,8 +27,18 @@ export default function AddEmployee() {
     e.preventDefault();
     setError('');
     if (!name.trim())            { setError('Name is required.');                   triggerShake(); return; }
-    if (!email.trim())           { setError('Email is required.');                  triggerShake(); return; }
-    if (password.length < 6)    { setError('Password must be at least 6 chars.');   triggerShake(); return; }
+    const emailCheck = validateEmail(email);
+    if (!emailCheck.valid) {
+      setError(emailCheck.message);
+      triggerShake();
+      return;
+    }
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      setError(passwordCheck.message);
+      triggerShake();
+      return;
+    }
     if (atEmployeeLimit) {
       redirectToBilling(navigate, 'Employee limit reached');
       return;
@@ -107,12 +118,12 @@ export default function AddEmployee() {
               label="Password"
               type="password"
               value={password}
-              placeholder="Min. 6 characters"
+              placeholder="Create a strong password"
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading || atEmployeeLimit}
             />
             <p className="text-xs mt-1.5 pl-1 text-muted-foreground">
-              Employee will use this password to log in.
+              At least 8 characters with uppercase, lowercase, number, and special character.
             </p>
           </div>
 

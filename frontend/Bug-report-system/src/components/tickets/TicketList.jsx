@@ -376,7 +376,11 @@ export default function TicketList({
               </thead>
               <tbody>
                 {tickets.map((t) => (
-                  <tr key={t._id} onClick={() => navigate(`/tickets/${t._id}`)}>
+                  <tr 
+                    key={t._id} 
+                    onClick={() => { if (!t.isClientIssueDraft) navigate(`/tickets/${t._id}`); }}
+                    className={t.isClientIssueDraft ? '!cursor-default opacity-85 hover:!bg-card' : ''}
+                  >
                     <td className="font-mono font-bold text-primary">{t.ticketNumber}</td>
                     <td className="font-medium">{t.title}</td>
                     {showProjectColumn && (

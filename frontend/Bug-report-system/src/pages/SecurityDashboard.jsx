@@ -27,6 +27,7 @@ export default function SecurityDashboard() {
   const [filters, setFilters] = useState({ action: '', from: '', to: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [revokingId, setRevokingId] = useState(null);
+  const [revokedIds, setRevokedIds] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
 
   const loadDashboard = useCallback(async () => {
@@ -57,7 +58,12 @@ export default function SecurityDashboard() {
     setRevokingId(sessionId);
     try {
       const data = await revokeSession(sessionId);
-      if (data.success) await loadDashboard();
+      if (data.success) {
+        setRevokedIds((prev) => [...prev, sessionId]);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await loadDashboard();
+        setRevokedIds((prev) => prev.filter((id) => id !== sessionId));
+      }
     } finally {
       setRevokingId(null);
     }
@@ -102,6 +108,7 @@ export default function SecurityDashboard() {
               sessions={d.activeSessions}
               onRevoke={handleRevoke}
               revokingId={revokingId}
+              revokedIds={revokedIds}
             />
           </Card>
 

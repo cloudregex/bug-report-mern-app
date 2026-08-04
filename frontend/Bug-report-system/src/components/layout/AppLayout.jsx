@@ -7,6 +7,7 @@ import { NotificationProvider } from '../../context/NotificationContext';
 import NotificationBell from '../notifications/NotificationBell';
 import Avatar from '../ui/Avatar';
 import ConfirmModal from '../ui/ConfirmModal';
+import { API_BASE_URL } from '../../config';
 
 const sharedNavItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
@@ -48,10 +49,22 @@ export default function AppLayout() {
   const isActive = (path, exact) =>
     exact ? location.pathname === path : location.pathname.startsWith(path);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setShowLogoutConfirm(false);
-    localStorage.removeItem('token');
-    navigate('/login');
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        await fetch(`${API_BASE_URL}/logout`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to call logout API:', err);
+    } finally {
+      localStorage.removeItem('token');
+      navigate('/login');
+    }
   };
 
   const navItems = isSuperAdmin

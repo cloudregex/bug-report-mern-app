@@ -6,6 +6,7 @@ import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input } from '../components/ui/Input';
 import Badge from '../components/ui/Badge';
 import { API_BASE_URL } from '../config';
+import { validateEmail } from '../utils/validation';
 
 export default function Login() {
   const [email, setEmail]       = useState('');
@@ -23,6 +24,12 @@ export default function Login() {
     e.preventDefault();
     setError('');
     if (!email.trim() || !password.trim()) { setError('Please fill in all fields.'); triggerShake(); return; }
+    const emailCheck = validateEmail(email);
+    if (!emailCheck.valid) {
+      setError(emailCheck.message);
+      triggerShake();
+      return;
+    }
     setIsLoading(true);
     try {
       const res  = await fetch(`${API_BASE_URL}/login`, {
