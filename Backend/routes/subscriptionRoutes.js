@@ -19,7 +19,7 @@ router.get('/billing', authorize(['ADMIN', 'EMPLOYEE']), getBilling);
 
 // SaaS owner
 router.get('/saas/dashboard', authorize(['SUPER_ADMIN']), getSaasDashboardStats);
-router.get('/plans', authorize(['SUPER_ADMIN']), listPlans);
+router.get('/plans', authorize(['SUPER_ADMIN', 'ADMIN']), listPlans);
 router.post('/plans', authorize(['SUPER_ADMIN']), createPlan);
 router.get('/subscriptions', authorize(['SUPER_ADMIN']), listSubscriptions);
 router.patch('/subscriptions/:id', authorize(['SUPER_ADMIN']), requireConfirmation, updateSubscription);

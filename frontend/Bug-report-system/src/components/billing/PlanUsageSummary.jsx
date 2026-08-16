@@ -51,6 +51,7 @@ export default function PlanUsageSummary({ compact = false, showUpgradeCta = tru
         <div className="space-y-3">
           <UsageBar label="Projects" used={usage.projectsCount ?? 0} max={plan.maxProjects} />
           <UsageBar label="Tickets This Month" used={usage.ticketsCreatedThisMonth ?? 0} max={plan.maxTicketsPerMonth} />
+          <UsageBar label="Storage" used={usage.storageUsed ?? 0} max={plan.maxStorageGB} suffix="GB" />
         </div>
 
         <Button
@@ -95,6 +96,7 @@ export default function PlanUsageSummary({ compact = false, showUpgradeCta = tru
       <UsageBar label="Projects" used={usage.projectsCount ?? 0} max={plan.maxProjects} />
       <UsageBar label="Employees" used={usage.employeesCount ?? 0} max={plan.maxEmployees} />
       <UsageBar label="Tickets This Month" used={usage.ticketsCreatedThisMonth ?? 0} max={plan.maxTicketsPerMonth} />
+      <UsageBar label="Storage" used={usage.storageUsed ?? 0} max={plan.maxStorageGB} suffix="GB" />
 
       {showUpgradeCta && (
         <Button variant="primary" size="auto" onClick={() => navigate('/billing')}>

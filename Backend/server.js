@@ -22,6 +22,7 @@ import sessionRoutes from './routes/sessionRoutes.js';
 import securityRoutes from './routes/securityRoutes.js';
 import rateLimiter from './middleware/rateLimiter.js';
 import clientIssueRoutes from './routes/clientIssueRoutes.js';
+import PaymentRouter from './routes/PaymentRouter.js'
 
 import { initSocket } from './socket.js';
 import { seedAdminUser, seedSuperAdmin } from './controllers/authController.js';
@@ -47,13 +48,20 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    if (req.originalUrl.includes('/payments/webhook')) {
+      req.rawBody = buf;
+    }
+  }
+}));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Apply rate limiting globally to all API routes
 app.use('/api', rateLimiter);
 
 app.use('/api', authRoutes);
+app.use('/api', PaymentRouter);
 app.use('/api/company', companyRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
@@ -91,6 +99,12 @@ const startServer = async () => {
       console.log('Database ENUM columns updated successfully.');
     } catch (enumErr) {
       console.warn('Enum column update warning:', enumErr.message);
+    }
+
+    try {
+      await sequelize.query("ALTER TABLE subscriptions ADD COLUMN stripe_customer_id VARCHAR(255) NULL");
+    } catch (err) {
+      console.warn("duplicate colume error");
     }
 
     await seedAdminUser();
