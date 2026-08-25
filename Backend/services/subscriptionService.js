@@ -37,6 +37,24 @@ export const seedPlans = async () => {
       maxStorageGB: 50,
       maxTicketsPerMonth: 5000,
       features: ['Unlimited workflows', '50 projects', '100 team members', 'Priority support']
+    },
+    {
+      name: 'GROWTH',
+      price: 19,
+      maxProjects: 15,
+      maxEmployees: 25,
+      maxStorageGB: 15,
+      maxTicketsPerMonth: 800,
+      features: ['Basic analytics', '15 projects', '25 team members', 'Standard support', '15 GB Storage']
+    },
+    {
+      name: 'ENTERPRISE',
+      price: 199,
+      maxProjects: 500,
+      maxEmployees: 1000,
+      maxStorageGB: 1000,
+      maxTicketsPerMonth: 100000,
+      features: ['Advanced security', '500 projects', '1000 team members', 'Dedicated manager', '1 TB Storage']
     }
   ];
 

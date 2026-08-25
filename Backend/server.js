@@ -28,7 +28,8 @@ import { initSocket } from './socket.js';
 import { seedAdminUser, seedSuperAdmin } from './controllers/authController.js';
 import { seedPlans, ensureAllCompanySubscriptions } from './services/subscriptionService.js';
 
-dotenv.config();
+dotenv.config(); // Load environment variables including FRONTEND_URL
+
 
 const app = express();
 const PORT = process.env.PORT || 5001;

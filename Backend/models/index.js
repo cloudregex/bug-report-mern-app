@@ -57,7 +57,9 @@ export const Subscription = sequelize.define('Subscription', {
     type: DataTypes.ENUM('ACTIVE', 'EXPIRED', 'CANCELLED', 'TRIAL'),
     defaultValue: 'ACTIVE'
   },
-  renewalDate: { type: DataTypes.DATE, allowNull: true }
+  renewalDate: { type: DataTypes.DATE, allowNull: true },
+  stripeCustomerId:{type:DataTypes.STRING,allowNull:true},
+  stripeSubscriptionId : {type:DataTypes.STRING, allowNull:true}
 }, {
   tableName: 'subscriptions',
   indexes: [
