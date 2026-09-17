@@ -125,11 +125,17 @@ export const registerCompany = async (req, res) => {
       return res.status(400).json({ success: false, message: passwordCheck.message });
     }
 
-    const emailNormalized = email.toLowerCase().trim();
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailPattern.test(emailNormalized)) {
-      return res.status(400).json({ success: false, message: 'Please enter a valid email address' });
+    const trimmedEmail = email.trim();
+    if (/[A-Z]/.test(trimmedEmail)) {
+      return res.status(400).json({ success: false, message: 'Email address must be lowercase and cannot contain uppercase letters' });
     }
+
+    const emailPattern = /^[a-z0-9]+(?:[._%+-][a-z0-9]+)*@[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,}$/;
+    if (!emailPattern.test(trimmedEmail)) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid email address (e.g. name@domain.com) with lowercase letters and no irregular symbols' });
+    }
+
+    const emailNormalized = trimmedEmail;
 
     const existingUser = await User.findOne({ where: { email: emailNormalized } });
     if (existingUser) {

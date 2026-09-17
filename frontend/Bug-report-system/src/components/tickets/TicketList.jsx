@@ -377,9 +377,18 @@ export default function TicketList({
               <tbody>
                 {tickets.map((t) => (
                   <tr 
-                    key={t._id} 
-                    onClick={() => { if (!t.isClientIssueDraft) navigate(`/tickets/${t._id}`); }}
-                    className={t.isClientIssueDraft ? '!cursor-default opacity-85 hover:!bg-card' : ''}
+                    key={t._id || t.id} 
+                    onClick={() => {
+                      if (t.isClientIssueDraft) {
+                        const projId = t.projectId?._id || t.projectId?.id || (typeof t.projectId === 'string' ? t.projectId : null);
+                        if (projId) {
+                          navigate(`/projects/${projId}?tab=client-issues`);
+                        }
+                      } else {
+                        navigate(`/tickets/${t._id || t.id}`);
+                      }
+                    }}
+                    className="cursor-pointer hover:bg-muted/40 transition-colors"
                   >
                     <td className="font-mono font-bold text-primary">{t.ticketNumber}</td>
                     <td className="font-medium">{t.title}</td>

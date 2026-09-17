@@ -4,6 +4,7 @@ import { incrementTicketUsage } from '../services/usageService.js';
 import { incrementTicketSequence } from '../utils/dbHelpers.js';
 import { emitDashboardUpdate } from '../services/dashboardBroadcast.js';
 import { recordDailyMetrics } from '../services/analyticsService.js';
+import { toApiDoc } from '../utils/apiShape.js';
 
 export const createClientIssue = async (req, res) => {
   try {
@@ -92,7 +93,7 @@ export const getClientIssues = async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
-    return res.status(200).json({ success: true, clientIssues });
+    return res.status(200).json({ success: true, clientIssues: toApiDoc(clientIssues) });
   } catch (error) {
     console.error('Get client issues error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -126,7 +127,7 @@ export const getClientIssueById = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied: Cannot view another client\'s issue' });
     }
 
-    return res.status(200).json({ success: true, clientIssue });
+    return res.status(200).json({ success: true, clientIssue: toApiDoc(clientIssue) });
   } catch (error) {
     console.error('Get client issue by ID error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
@@ -249,8 +250,8 @@ export const convertClientIssueToTicket = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Client issue converted to ticket successfully',
-      ticket,
-      clientIssue
+      ticket: toApiDoc(ticket),
+      clientIssue: toApiDoc(clientIssue)
     });
   } catch (error) {
     console.error('Convert client issue error:', error);
@@ -295,7 +296,7 @@ export const rejectClientIssue = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Client issue has been rejected',
-      clientIssue
+      clientIssue: toApiDoc(clientIssue)
     });
   } catch (error) {
     console.error('Reject client issue error:', error);

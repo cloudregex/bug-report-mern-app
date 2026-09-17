@@ -9,11 +9,14 @@ export const createEmployee = async (req, res) => {
   try {
     const { name, email, password } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: 'Name is required' });
-    if (!email || !email.trim()) return res.status(400).json({ success: false, message: 'Email is required' });
+    const trimmedEmail = email.trim();
+    if (/[A-Z]/.test(trimmedEmail)) {
+      return res.status(400).json({ success: false, message: 'Email address must be lowercase and cannot contain uppercase letters' });
+    }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      return res.status(400).json({ success: false, message: 'Please enter a valid email address' });
+    const emailRegex = /^[a-z0-9]+(?:[._%+-][a-z0-9]+)*@[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,}$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid email address (e.g. name@domain.com) with lowercase letters and no irregular symbols' });
     }
 
     const passwordCheck = validatePasswordStrength(password);
@@ -187,11 +190,14 @@ export const createClient = async (req, res) => {
   try {
     const { name, email, password } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: 'Name is required' });
-    if (!email || !email.trim()) return res.status(400).json({ success: false, message: 'Email is required' });
+    const trimmedEmail = email.trim();
+    if (/[A-Z]/.test(trimmedEmail)) {
+      return res.status(400).json({ success: false, message: 'Email address must be lowercase and cannot contain uppercase letters' });
+    }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      return res.status(400).json({ success: false, message: 'Please enter a valid email address' });
+    const emailRegex = /^[a-z0-9]+(?:[._%+-][a-z0-9]+)*@[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,}$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid email address (e.g. name@domain.com) with lowercase letters and no irregular symbols' });
     }
 
     const passwordCheck = validatePasswordStrength(password);

@@ -1,11 +1,15 @@
-export const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const emailRegex = /^[a-z0-9]+(?:[._%+-][a-z0-9]+)*@[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,}$/;
 
 export const validateEmail = (email) => {
   if (!email || !email.trim()) {
     return { valid: false, message: 'Email is required.' };
   }
-  if (!emailRegex.test(email.trim())) {
-    return { valid: false, message: 'Please enter a valid email address.' };
+  const trimmed = email.trim();
+  if (/[A-Z]/.test(trimmed)) {
+    return { valid: false, message: 'Email address must be lowercase and cannot contain uppercase letters.' };
+  }
+  if (!emailRegex.test(trimmed)) {
+    return { valid: false, message: 'Please enter a valid email address (e.g. name@domain.com) with lowercase letters and no irregular symbols.' };
   }
   return { valid: true };
 };

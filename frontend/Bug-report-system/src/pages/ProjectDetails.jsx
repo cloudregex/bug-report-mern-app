@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { LayoutDashboard, Ticket, Users, Settings, Plus, X, Trash2, BarChart3, AlertCircle, CheckCircle, ExternalLink, Calendar } from 'lucide-react';
 import PageShell from '../components/layout/PageShell';
 import Card from '../components/ui/Card';
@@ -7,6 +7,7 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Tabs from '../components/ui/Tabs';
 import ErrorBanner from '../components/ui/ErrorBanner';
+import EmptyState from '../components/ui/EmptyState';
 import { Input, Textarea, Select } from '../components/ui/Input';
 import TicketList from '../components/tickets/TicketList';
 import ProjectDashboardPanel from '../components/dashboard/ProjectDashboardPanel';
@@ -20,13 +21,31 @@ export default function ProjectDetails() {
   const { id } = useParams();
   const { user } = useOutletContext();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [project, setProject] = useState(null);
   const [myRole, setMyRole] = useState('VIEWER');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [activeTab, setActiveTab] = useState('overview');
+  const tabFromUrl = searchParams.get('tab');
+  const [activeTab, setActiveTabState] = useState(tabFromUrl || 'overview');
+
+  const setActiveTab = (tab) => {
+    setActiveTabState(tab);
+    if (tab === 'overview') {
+      searchParams.delete('tab');
+      setSearchParams(searchParams, { replace: true });
+    } else {
+      setSearchParams({ tab }, { replace: true });
+    }
+  };
+
+  useEffect(() => {
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    }
+  }, [tabFromUrl]);
 
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -122,13 +141,15 @@ export default function ProjectDetails() {
 
   const fetchProjectClientIssues = async () => {
     setIsIssuesLoading(true);
+    setIssuesError('');
     const token = localStorage.getItem('token');
     try {
       const response = await fetch(`${API_BASE_URL}/client-issues?projectId=${id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      if (response.ok && data.success) setClientIssues(data.clientIssues || []);
+      if (!response.ok) throw new Error(data.message || 'Failed to load client issues');
+      setClientIssues(data.clientIssues || []);
     } catch (err) {
       setIssuesError(err.message);
     } finally {
@@ -590,13 +611,16 @@ export default function ProjectDetails() {
             />
           ) : (
             <div className="space-y-4 border-t pt-4">
-              {clientIssues.map((issue) => (
-                <Card key={issue._id} className="p-6 space-y-4">
+              {clientIssues.map((issue) => {
+                const issueId = issue._id || issue.id;
+                const convertedTicketId = issue.convertedTicket?._id || issue.convertedTicket?.id || issue.convertedTicketId;
+                return (
+                <Card key={issueId} className="p-6 space-y-4">
                   <div className="flex justify-between items-start flex-wrap gap-2 border-b pb-3">
                     <div>
                       <h4 className="font-bold text-base leading-snug">{issue.title}</h4>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Reported by: <span className="font-semibold text-primary">{issue.client?.name}</span> ({issue.client?.email}) on {new Date(issue.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        Reported by: <span className="font-semibold text-primary">{issue.client?.name || 'Client'}</span> ({issue.client?.email || 'N/A'}) on {issue.createdAt ? new Date(issue.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}
                       </p>
                     </div>
                     <div>
@@ -624,8 +648,8 @@ export default function ProjectDetails() {
 
                       {issue.status === 'PENDING' && hasAdminPrivilege && (
                         <div className="pt-3 border-t">
-                          {convertingIssueId === issue._id ? (
-                            <form onSubmit={(e) => { e.preventDefault(); handleConvertIssue(issue._id); }} className="p-4 bg-muted/30 rounded-lg space-y-4 border border-dashed animate-fade-in max-w-xl">
+                          {convertingIssueId === issueId ? (
+                            <form onSubmit={(e) => { e.preventDefault(); handleConvertIssue(issueId); }} className="p-4 bg-muted/30 rounded-lg space-y-4 border border-dashed animate-fade-in max-w-xl">
                               <h5 className="font-bold text-sm">Convert to Ticket Options</h5>
                               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <Select label="Type" value={convType} onChange={(e) => setConvType(e.target.value)} disabled={isConverting}>
@@ -644,9 +668,15 @@ export default function ProjectDetails() {
                                 </Select>
                                 <Select label="Assignee" value={convAssignee} onChange={(e) => setConvAssignee(e.target.value)} disabled={isConverting}>
                                   <option value="">Unassigned</option>
-                                  {members.map(m => m.userId && m.role !== 'CLIENT' && (
-                                    <option key={m._id} value={m.userId._id}>{m.userId.name} ({m.role})</option>
-                                  ))}
+                                  {members.map(m => {
+                                    const u = m.userId || m.user;
+                                    if (!u || m.role === 'CLIENT') return null;
+                                    const uid = u._id || u.id || (typeof u === 'string' ? u : null);
+                                    const uname = u.name || 'Member';
+                                    return (
+                                      <option key={m._id || m.id || uid} value={uid}>{uname} ({m.role})</option>
+                                    );
+                                  })}
                                 </Select>
                               </div>
                               <div className="flex gap-3 pt-2">
@@ -657,28 +687,28 @@ export default function ProjectDetails() {
                           ) : (
                             <div className="flex gap-3">
                               <Button type="button" variant="primary" size="auto" onClick={() => {
-                                setConvertingIssueId(issue._id);
+                                setConvertingIssueId(issueId);
                                 setConvType('BUG');
                                 setConvPriority('MEDIUM');
                                 setConvAssignee('');
                               }}>Convert to Ticket</Button>
-                              <Button type="button" variant="outline" size="auto" onClick={() => handleRejectIssue(issue._id)} className="!text-destructive !border-destructive/30 hover:!bg-destructive/10">Reject</Button>
+                              <Button type="button" variant="outline" size="auto" onClick={() => handleRejectIssue(issueId)} className="!text-destructive !border-destructive/30 hover:!bg-destructive/10">Reject</Button>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {issue.status === 'CONVERTED' && issue.convertedTicket && (
+                      {issue.status === 'CONVERTED' && (issue.convertedTicket || convertedTicketId) && (
                         <div className="flex items-center gap-2 mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs w-fit">
                           <CheckCircle size={14} className="shrink-0 text-emerald-600" />
                           <div>
                             <span>Converted to Ticket: </span>
                             <button
                               type="button"
-                              onClick={() => navigate(`/tickets/${issue.convertedTicket._id || issue.convertedTicketId}`)}
+                              onClick={() => navigate(`/tickets/${convertedTicketId}`)}
                               className="font-bold underline cursor-pointer text-emerald-700 hover:text-emerald-900"
                             >
-                              {issue.convertedTicket.ticketNumber}
+                              {issue.convertedTicket?.ticketNumber || 'View Ticket'}
                             </button>
                           </div>
                         </div>
@@ -692,7 +722,8 @@ export default function ProjectDetails() {
                     </div>
                   </div>
                 </Card>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
