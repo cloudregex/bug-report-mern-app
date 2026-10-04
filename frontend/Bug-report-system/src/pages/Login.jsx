@@ -6,36 +6,58 @@ import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input } from '../components/ui/Input';
 import Badge from '../components/ui/Badge';
 import { API_BASE_URL } from '../config';
-import { validateEmail } from '../utils/validation';
+import { validateEmail, normalizeEmail, validateLoginPassword } from '../utils/validation';
 
 export default function Login() {
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError]       = useState('');
-  const [shake, setShake]       = useState(false);
+  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
+  const [shake, setShake] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     if (localStorage.getItem('token')) navigate('/');
   }, [navigate]);
 
+  const triggerShake = () => {
+    setShake(true);
+    setTimeout(() => setShake(false), 500);
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    if (!email.trim() || !password.trim()) { setError('Please fill in all fields.'); triggerShake(); return; }
-    const emailCheck = validateEmail(email);
+    const newErrors = {};
+
+    const emailCheck = validateEmail(email, { required: true });
     if (!emailCheck.valid) {
-      setError(emailCheck.message);
+      newErrors.email = emailCheck.message;
+    }
+
+    const passwordCheck = validateLoginPassword(password);
+    if (!passwordCheck.valid) {
+      newErrors.password = passwordCheck.message;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setError('Please provide valid login credentials.');
       triggerShake();
       return;
     }
+
+    setErrors({});
     setIsLoading(true);
+
+    const normalizedMail = normalizeEmail(email);
+
     try {
-      const res  = await fetch(`${API_BASE_URL}/login`, {
+      const res = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: normalizedMail, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Invalid credentials');
@@ -49,20 +71,19 @@ export default function Login() {
     }
   };
 
-  const triggerShake = () => { setShake(true); setTimeout(() => setShake(false), 500); };
-
   const fillCredentials = (e, demoEmail, demoPassword) => {
     e.preventDefault();
     setEmail(demoEmail);
     setPassword(demoPassword);
+    setErrors({});
     setError('');
   };
 
   const demoAccounts = [
-    { label: 'ADMIN',      variant: 'active',  email: 'admin@example.com',      password: 'Admin@123' },
-    { label: 'EMPLOYEE',   variant: 'open',    email: 'employee@example.com',   password: 'Employee@123' },
-    { label: 'CLIENT',     variant: 'invited', email: 'client@example.com',     password: 'Client@123' },
-    { label: 'SUPER ADMIN',variant: 'closed',  email: 'superadmin@example.com', password: 'SuperAdmin@123' },
+    { label: 'ADMIN', variant: 'active', email: 'admin@example.com', password: 'Admin@123' },
+    { label: 'EMPLOYEE', variant: 'open', email: 'employee@example.com', password: 'Employee@123' },
+    { label: 'CLIENT', variant: 'invited', email: 'client@example.com', password: 'Client@123' },
+    { label: 'SUPER ADMIN', variant: 'closed', email: 'superadmin@example.com', password: 'SuperAdmin@123' },
   ];
 
   return (
@@ -73,25 +94,39 @@ export default function Login() {
 
         <ErrorBanner>{error}</ErrorBanner>
 
-        <form onSubmit={handleLogin} className="space-y-5">
+        <form onSubmit={handleLogin} className="space-y-5" noValidate>
           <Input
             id="login-email"
+            name="email"
             label="Email address"
             type="email"
+            required
+            maxLength={254}
             value={email}
             autoComplete="email"
-            onChange={(e) => setEmail(e.target.value)}
+            error={errors.email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+            }}
             placeholder="you@example.com"
             disabled={isLoading}
           />
 
           <Input
             id="login-password"
+            name="password"
             label="Password"
             type="password"
+            required
+            maxLength={128}
             value={password}
             autoComplete="current-password"
-            onChange={(e) => setPassword(e.target.value)}
+            error={errors.password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+            }}
             placeholder="Enter your password"
             disabled={isLoading}
           />
@@ -109,7 +144,9 @@ export default function Login() {
         </p>
 
         <div className="cred-hint">
-          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--muted-foreground)' }}>Demo credentials — click to fill</p>
+          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--muted-foreground)' }}>
+            Demo credentials — click to fill
+          </p>
           <div className="space-y-2">
             {demoAccounts.map(({ label, variant, email: demoEmail, password: demoPassword }) => (
               <button

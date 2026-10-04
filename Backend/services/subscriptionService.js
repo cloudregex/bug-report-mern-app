@@ -237,7 +237,8 @@ export const getSaasDashboard = async () => {
         plan: plan?.name,
         status: sub.status,
         employeesCount: usage.employeesCount,
-        projectsCount: usage.projectsCount
+        projectsCount: usage.projectsCount,
+        ticketsThisMonth: usage.ticketsCreatedThisMonth
       };
     })
   );
@@ -245,21 +246,67 @@ export const getSaasDashboard = async () => {
   topCompanies.sort((a, b) => (b.employeesCount + b.projectsCount) - (a.employeesCount + a.projectsCount));
 
   let totalStorage = 0;
+  let totalEmployees = 0;
+  let totalProjects = 0;
+  let totalTickets = 0;
   for (const sub of subscriptions) {
     const company = sub.company || sub.get?.('company');
     const usage = await syncUsage(company?.id || sub.companyId);
     totalStorage += usage.storageUsed || 0;
+    totalEmployees += usage.employeesCount || 0;
+    totalProjects += usage.projectsCount || 0;
+    totalTickets += usage.ticketsCreatedThisMonth || 0;
   }
 
   return {
     totalCompanies,
+    totalEmployees,
+    totalProjects,
+    totalTickets,
     mrr,
     activeSubscriptions: activeSubscriptions.length,
     expiredSubscriptions: expiredSubscriptions.length,
+    cancelledSubscriptions: subscriptions.filter((s) => s.status === 'CANCELLED').length,
     storageUsageGB: totalStorage,
     topCompanies: topCompanies.slice(0, 5),
-    plans: plans.map((p) => ({ name: p.name, price: Number(p.price), _id: p.id }))
+    plans: plans.map((p) => ({ name: p.name, price: Number(p.price), _id: p.id, maxProjects: p.maxProjects, maxEmployees: p.maxEmployees }))
   };
+};
+
+export const getCompaniesOverview = async () => {
+  const subscriptions = await Subscription.findAll({ include: subscriptionIncludes(), order: [['updatedAt', 'DESC']] });
+
+  const companies = await Promise.all(
+    subscriptions.map(async (sub) => {
+      const company = sub.company || sub.get?.('company');
+      const companyId = company?.id || sub.companyId;
+      const plan = sub.plan || sub.get?.('plan');
+      const usage = await syncUsage(companyId);
+
+      return {
+        companyId,
+        companyName: company?.name || 'Unknown',
+        companySlug: company?.slug || '',
+        createdAt: company?.createdAt,
+        plan: plan ? { name: plan.name, price: Number(plan.price), maxProjects: plan.maxProjects, maxEmployees: plan.maxEmployees } : null,
+        subscription: {
+          id: sub.id,
+          status: sub.status,
+          startDate: sub.startDate,
+          renewalDate: sub.renewalDate,
+          endDate: sub.endDate
+        },
+        usage: {
+          employeesCount: usage.employeesCount,
+          projectsCount: usage.projectsCount,
+          ticketsCreatedThisMonth: usage.ticketsCreatedThisMonth,
+          storageUsed: usage.storageUsed
+        }
+      };
+    })
+  );
+
+  return companies.sort((a, b) => (b.usage.employeesCount + b.usage.projectsCount) - (a.usage.employeesCount + a.usage.projectsCount));
 };
 
 export const getShapedSubscription = (subscription) => {

@@ -5,7 +5,8 @@ import {
   listSubscriptions,
   updateSubscription,
   getBilling,
-  getSaasDashboardStats
+  getSaasDashboardStats,
+  getSaasCompanies
 } from '../controllers/subscriptionController.js';
 import { authenticateToken, authorize } from '../middleware/authMiddleware.js';
 import { requireConfirmation } from '../middleware/confirmationMiddleware.js';
@@ -19,6 +20,7 @@ router.get('/billing', authorize(['ADMIN', 'EMPLOYEE']), getBilling);
 
 // SaaS owner
 router.get('/saas/dashboard', authorize(['SUPER_ADMIN']), getSaasDashboardStats);
+router.get('/saas/companies', authorize(['SUPER_ADMIN']), getSaasCompanies);
 router.get('/plans', authorize(['SUPER_ADMIN', 'ADMIN']), listPlans);
 router.post('/plans', authorize(['SUPER_ADMIN']), createPlan);
 router.get('/subscriptions', authorize(['SUPER_ADMIN']), listSubscriptions);

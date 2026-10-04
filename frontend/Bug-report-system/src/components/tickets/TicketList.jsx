@@ -8,6 +8,7 @@ import ErrorBanner from '../ui/ErrorBanner';
 import { PageLoader } from '../ui/Spinner';
 import { priorityBadgeClass, ticketStatusBadgeClass } from '../ui/Badge';
 import { API_BASE_URL } from '../../config.js';
+import { validateFilterName } from '../../utils/validation';
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
   { value: 'BACKLOG', label: 'Backlog' },

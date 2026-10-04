@@ -13,6 +13,7 @@ import Spinner, { PageLoader } from '../components/ui/Spinner';
 import MentionInput, { renderCommentWithMentions } from '../components/comments/MentionInput';
 import { useNotifications } from '../context/NotificationContext';
 import { API_BASE_URL, BASE_URL } from '../config';
+import { validateComment } from '../utils/validation';
 
 export default function TicketDetails() {
   const { id } = useParams();
@@ -34,8 +35,10 @@ export default function TicketDetails() {
   const [activeTab, setActiveTab] = useState('comments');
   const [comments, setComments] = useState([]);
   const [newCommentText, setNewCommentText] = useState('');
+  const [commentError, setCommentError] = useState('');
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
+  const [editCommentError, setEditCommentError] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -150,13 +153,18 @@ export default function TicketDetails() {
 
   const handleAddComment = async (e) => {
     e.preventDefault();
-    if (!newCommentText.trim()) return;
+    const check = validateComment(newCommentText);
+    if (!check.valid) {
+      setCommentError(check.message);
+      return;
+    }
+    setCommentError('');
     const token = localStorage.getItem('token');
     try {
       const response = await fetch(`${API_BASE_URL}/tickets/${id}/comments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ content: newCommentText })
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: newCommentText.trim() })
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -169,22 +177,27 @@ export default function TicketDetails() {
         fetchTicketDetails();
         fetchTicketMentions();
       } else {
-        setError(data.message || 'Failed to add comment');
+        setCommentError(data.message || 'Failed to add comment');
       }
     } catch (err) {
       console.error(err);
-      setError('Failed to add comment');
+      setCommentError('Failed to add comment');
     }
   };
 
   const handleUpdateComment = async (commentId) => {
-    if (!editingCommentText.trim()) return;
+    const check = validateComment(editingCommentText);
+    if (!check.valid) {
+      setEditCommentError(check.message);
+      return;
+    }
+    setEditCommentError('');
     const token = localStorage.getItem('token');
     try {
       const response = await fetch(`${API_BASE_URL}/comments/${commentId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ content: editingCommentText })
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: editingCommentText.trim() })
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -192,11 +205,11 @@ export default function TicketDetails() {
         setEditingCommentText('');
         fetchComments();
       } else {
-        setError(data.message || 'Failed to update comment');
+        setEditCommentError(data.message || 'Failed to update comment');
       }
     } catch (err) {
       console.error(err);
-      setError('Failed to update comment');
+      setEditCommentError('Failed to update comment');
     }
   };
 
@@ -220,6 +233,10 @@ export default function TicketDetails() {
   const handleUploadAttachment = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('File size must be under 10MB.');
+      return;
+    }
     setIsUploadingAttachment(true);
     setUploadError('');
     const token = localStorage.getItem('token');
@@ -453,10 +470,18 @@ export default function TicketDetails() {
                     <div className="flex-1 space-y-2.5">
                       <MentionInput
                         value={newCommentText}
-                        onChange={setNewCommentText}
+                        onChange={(val) => {
+                          setNewCommentText(val);
+                          if (commentError) setCommentError('');
+                        }}
                         mentionUsers={mentionUsers}
                         placeholder="Write a comment... Use @ to mention someone"
                       />
+                      {commentError && (
+                        <span className="field-error" role="alert">
+                          {commentError}
+                        </span>
+                      )}
                       <Button type="submit" size="auto" disabled={!newCommentText.trim()}>Comment</Button>
                     </div>
                   </form>
@@ -481,10 +506,24 @@ export default function TicketDetails() {
 
                             {isEditing ? (
                               <div className="space-y-2 mt-2">
-                                <textarea value={editingCommentText} onChange={(e) => setEditingCommentText(e.target.value)} rows="2" className="field-input field-textarea text-sm" />
+                                <textarea
+                                  value={editingCommentText}
+                                  maxLength={2000}
+                                  onChange={(e) => {
+                                    setEditingCommentText(e.target.value);
+                                    if (editCommentError) setEditCommentError('');
+                                  }}
+                                  rows="2"
+                                  className="field-input field-textarea text-sm"
+                                />
+                                {editCommentError && (
+                                  <span className="field-error" role="alert">
+                                    {editCommentError}
+                                  </span>
+                                )}
                                 <div className="flex gap-2">
                                   <Button size="sm" onClick={() => handleUpdateComment(c._id)} disabled={!editingCommentText.trim()}>Save</Button>
-                                  <Button size="sm" variant="ghost" onClick={() => { setEditingCommentId(null); setEditingCommentText(''); }}>Cancel</Button>
+                                  <Button size="sm" variant="ghost" onClick={() => { setEditingCommentId(null); setEditingCommentText(''); setEditCommentError(''); }}>Cancel</Button>
                                 </div>
                               </div>
                             ) : (

@@ -14,6 +14,13 @@ import ProjectDashboardPanel from '../components/dashboard/ProjectDashboardPanel
 import { useDashboardRefresh } from '../hooks/useDashboardRefresh';
 import { PageLoader } from '../components/ui/Spinner';
 import { handleUpgradeResponse } from '../utils/billing';
+import {
+  validateTicketTitle,
+  validateTicketDescription,
+  validateProjectName,
+  validateProjectDescription,
+  normalizeText
+} from '../utils/validation';
 
 import { API_BASE_URL, BASE_URL } from '../config.js';
 
@@ -77,6 +84,8 @@ export default function ProjectDetails() {
   const [ticketAssignee, setTicketAssignee] = useState('');
   const [isCreatingTicket, setIsCreatingTicket] = useState(false);
   const [ticketCreateError, setTicketCreateError] = useState('');
+  const [ticketErrors, setTicketErrors] = useState({});
+  const [settingsErrors, setSettingsErrors] = useState({});
   const [projectDashboard, setProjectDashboard] = useState(null);
   const [isDashboardLoading, setIsDashboardLoading] = useState(false);
 
@@ -231,13 +240,31 @@ export default function ProjectDetails() {
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
     if (!hasAdminPrivilege) return;
+    const newErrors = {};
+
+    const nameCheck = validateProjectName(editName);
+    if (!nameCheck.valid) {
+      newErrors.name = nameCheck.message;
+    }
+
+    const descCheck = validateProjectDescription(editDescription);
+    if (!descCheck.valid) {
+      newErrors.description = descCheck.message;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setSettingsErrors(newErrors);
+      return;
+    }
+
+    setSettingsErrors({});
     setIsSavingSettings(true);
     const token = localStorage.getItem('token');
     try {
       const response = await fetch(`${API_BASE_URL}/projects/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ name: editName, description: editDescription })
+        body: JSON.stringify({ name: normalizeText(editName), description: editDescription ? editDescription.trim() : '' })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Failed to update settings');
@@ -287,7 +314,10 @@ export default function ProjectDetails() {
 
   const handleAddMember = async (e) => {
     e.preventDefault();
-    if (!selectedUserId) return;
+    if (!selectedUserId) {
+      setMemberError('Please select a member to add to the project.');
+      return;
+    }
     setMemberError('');
     setIsAddingMember(true);
     const token = localStorage.getItem('token');
@@ -345,17 +375,34 @@ export default function ProjectDetails() {
 
   const handleCreateTicket = async (e) => {
     e.preventDefault();
-    if (!ticketTitle.trim()) return;
     setTicketCreateError('');
+    const newErrors = {};
+
+    const titleCheck = validateTicketTitle(ticketTitle);
+    if (!titleCheck.valid) {
+      newErrors.title = titleCheck.message;
+    }
+
+    const descCheck = validateTicketDescription(ticketDesc);
+    if (!descCheck.valid) {
+      newErrors.desc = descCheck.message;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setTicketErrors(newErrors);
+      return;
+    }
+
+    setTicketErrors({});
     setIsCreatingTicket(true);
     const token = localStorage.getItem('token');
     try {
       const response = await fetch(`${API_BASE_URL}/projects/${id}/tickets`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          title: ticketTitle,
-          description: ticketDesc,
+          title: ticketTitle.trim(),
+          description: ticketDesc ? ticketDesc.trim() : '',
           type: ticketType,
           priority: ticketPriority,
           assigneeId: ticketAssignee || null
@@ -465,25 +512,76 @@ export default function ProjectDetails() {
           {showCreateForm && (
             <Card className="p-6 space-y-5 animate-fade-in">
               <h4 className="font-bold text-base">New Ticket</h4>
-              <form onSubmit={handleCreateTicket} className="space-y-4">
-                <Input label="Title" type="text" value={ticketTitle} onChange={(e) => setTicketTitle(e.target.value)} placeholder="e.g. Login page crashes" disabled={isCreatingTicket} />
-                <Textarea label="Description" value={ticketDesc} onChange={(e) => setTicketDesc(e.target.value)} placeholder="Enter steps to reproduce or details" disabled={isCreatingTicket} />
+              <form onSubmit={handleCreateTicket} className="space-y-4" noValidate>
+                <Input
+                  id="ticket-create-title"
+                  name="ticketTitle"
+                  label="Title"
+                  type="text"
+                  required
+                  maxLength={150}
+                  value={ticketTitle}
+                  error={ticketErrors.title}
+                  onChange={(e) => {
+                    setTicketTitle(e.target.value);
+                    if (ticketErrors.title) setTicketErrors((prev) => ({ ...prev, title: undefined }));
+                  }}
+                  placeholder="e.g. Login page crashes on mobile Safari"
+                  disabled={isCreatingTicket}
+                />
+                <Textarea
+                  id="ticket-create-desc"
+                  name="ticketDescription"
+                  label="Description"
+                  optional
+                  maxLength={5000}
+                  rows={4}
+                  value={ticketDesc}
+                  error={ticketErrors.desc}
+                  onChange={(e) => {
+                    setTicketDesc(e.target.value);
+                    if (ticketErrors.desc) setTicketErrors((prev) => ({ ...prev, desc: undefined }));
+                  }}
+                  placeholder="Enter steps to reproduce, expected results, or technical details"
+                  disabled={isCreatingTicket}
+                />
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <Select label="Type" value={ticketType} onChange={(e) => setTicketType(e.target.value)} disabled={isCreatingTicket}>
+                  <Select
+                    id="ticket-create-type"
+                    name="ticketType"
+                    label="Type"
+                    value={ticketType}
+                    onChange={(e) => setTicketType(e.target.value)}
+                    disabled={isCreatingTicket}
+                  >
                     <option value="BUG">Bug</option>
                     <option value="TASK">Task</option>
                     <option value="FEATURE">Feature</option>
                     <option value="IMPROVEMENT">Improvement</option>
                     <option value="EPIC">Epic</option>
                   </Select>
-                  <Select label="Priority" value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} disabled={isCreatingTicket}>
+                  <Select
+                    id="ticket-create-priority"
+                    name="ticketPriority"
+                    label="Priority"
+                    value={ticketPriority}
+                    onChange={(e) => setTicketPriority(e.target.value)}
+                    disabled={isCreatingTicket}
+                  >
                     <option value="LOW">Low</option>
                     <option value="MEDIUM">Medium</option>
                     <option value="HIGH">High</option>
                     <option value="CRITICAL">Critical</option>
                     <option value="BLOCKER">Blocker</option>
                   </Select>
-                  <Select label="Assignee" value={ticketAssignee} onChange={(e) => setTicketAssignee(e.target.value)} disabled={isCreatingTicket}>
+                  <Select
+                    id="ticket-create-assignee"
+                    name="ticketAssignee"
+                    label="Assignee"
+                    value={ticketAssignee}
+                    onChange={(e) => setTicketAssignee(e.target.value)}
+                    disabled={isCreatingTicket}
+                  >
                     <option value="">Unassigned</option>
                     <option value={user.id}>{user.name} (Admin)</option>
                     {members.map(m => m.userId && m.userId._id !== user.id && (
@@ -491,7 +589,7 @@ export default function ProjectDetails() {
                     ))}
                   </Select>
                 </div>
-                <Button type="submit" size="auto" disabled={isCreatingTicket || !ticketTitle.trim()} loading={isCreatingTicket}>
+                <Button type="submit" size="auto" disabled={isCreatingTicket} loading={isCreatingTicket}>
                   {isCreatingTicket ? 'Creating...' : 'Create Ticket'}
                 </Button>
               </form>
@@ -733,10 +831,41 @@ export default function ProjectDetails() {
         <div className="space-y-6 animate-fade-up">
           <Card className="p-8">
             <h4 className="font-extrabold text-xl mb-6">Project Settings</h4>
-            <form onSubmit={handleUpdateSettings} className="space-y-5">
-              <Input label="Project Name" type="text" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Enter project name" disabled={isSavingSettings} />
-              <Textarea label="Description" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} placeholder="Brief summary of the project workspace" disabled={isSavingSettings} />
-              <Button type="submit" size="auto" disabled={isSavingSettings || !editName.trim()} loading={isSavingSettings}>
+            <form onSubmit={handleUpdateSettings} className="space-y-5" noValidate>
+              <Input
+                id="project-edit-name"
+                name="projectName"
+                label="Project Name"
+                type="text"
+                required
+                maxLength={100}
+                value={editName}
+                error={settingsErrors.name}
+                onChange={(e) => {
+                  setEditName(e.target.value);
+                  if (settingsErrors.name) setSettingsErrors((prev) => ({ ...prev, name: undefined }));
+                }}
+                placeholder="Enter project name"
+                disabled={isSavingSettings}
+              />
+              <Textarea
+                id="project-edit-description"
+                name="projectDescription"
+                label="Description"
+                optional
+                maxLength={1000}
+                rows={4}
+                value={editDescription}
+                error={settingsErrors.description}
+                helperText="Maximum 1,000 characters."
+                onChange={(e) => {
+                  setEditDescription(e.target.value);
+                  if (settingsErrors.description) setSettingsErrors((prev) => ({ ...prev, description: undefined }));
+                }}
+                placeholder="Brief summary of the project workspace"
+                disabled={isSavingSettings}
+              />
+              <Button type="submit" size="auto" disabled={isSavingSettings} loading={isSavingSettings}>
                 {isSavingSettings ? 'Saving...' : 'Save Changes'}
               </Button>
             </form>

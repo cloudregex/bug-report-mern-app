@@ -1,7 +1,7 @@
 import Plan from '../models/Plan.js';
 import Subscription from '../models/Subscription.js';
 import User from '../models/User.js';
-import { getBillingInfo, getSaasDashboard } from '../services/subscriptionService.js';
+import { getBillingInfo, getSaasDashboard, getCompaniesOverview } from '../services/subscriptionService.js';
 import { syncUsage } from '../services/usageService.js';
 import { createAuditLog } from '../services/auditService.js';
 import { subscriptionIncludes } from '../utils/queryIncludes.js';
@@ -132,6 +132,16 @@ export const getSaasDashboardStats = async (req, res) => {
     return res.status(200).json({ success: true, dashboard: stats });
   } catch (error) {
     console.error('SaaS dashboard error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+export const getSaasCompanies = async (req, res) => {
+  try {
+    const companies = await getCompaniesOverview();
+    return res.status(200).json({ success: true, companies });
+  } catch (error) {
+    console.error('SaaS companies overview error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

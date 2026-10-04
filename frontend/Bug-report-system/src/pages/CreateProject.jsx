@@ -7,46 +7,83 @@ import Button from '../components/ui/Button';
 import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input, Textarea } from '../components/ui/Input';
 import { API_BASE_URL } from '../config';
+import {
+  validateProjectName,
+  validateProjectDescription,
+  normalizeText
+} from '../utils/validation';
 import { useBilling } from '../hooks/useBilling';
 import { handleUpgradeResponse, isAtLimit, redirectToBilling } from '../utils/billing';
 
 export default function CreateProject() {
-  const [name, setName]               = useState('');
+  const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [isLoading, setIsLoading]     = useState(false);
-  const [error, setError]             = useState('');
-  const [shake, setShake]             = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
+  const [shake, setShake] = useState(false);
   const navigate = useNavigate();
   const { plan, usage } = useBilling();
 
   const atProjectLimit = isAtLimit(usage, plan, 'projects');
 
+  const triggerShake = () => {
+    setShake(true);
+    setTimeout(() => setShake(false), 500);
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     setError('');
-    if (!name.trim()) { setError('Project name is required.'); triggerShake(); return; }
+    const newErrors = {};
+
+    const nameCheck = validateProjectName(name);
+    if (!nameCheck.valid) {
+      newErrors.name = nameCheck.message;
+    }
+
+    const descCheck = validateProjectDescription(description);
+    if (!descCheck.valid) {
+      newErrors.description = descCheck.message;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setError('Please review project details.');
+      triggerShake();
+      return;
+    }
+
     if (atProjectLimit) {
       redirectToBilling(navigate, 'Project limit reached');
       return;
     }
+
+    setErrors({});
     setIsLoading(true);
+
+    const normalizedName = normalizeText(name);
+    const normalizedDesc = description ? description.trim() : '';
+
     try {
       const token = localStorage.getItem('token');
-      const res   = await fetch(`${API_BASE_URL}/projects`, {
+      const res = await fetch(`${API_BASE_URL}/projects`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ name, description }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: normalizedName, description: normalizedDesc }),
       });
       const data = await res.json();
       const result = handleUpgradeResponse(res, data, navigate);
       if (result.upgrade) return;
       if (!result.ok) throw new Error(result.error);
       navigate('/projects');
-    } catch (err) { setError(err.message); triggerShake(); }
-    finally { setIsLoading(false); }
+    } catch (err) {
+      setError(err.message);
+      triggerShake();
+    } finally {
+      setIsLoading(false);
+    }
   };
-
-  const triggerShake = () => { setShake(true); setTimeout(() => setShake(false), 500); };
 
   return (
     <PageShell backLabel="Projects" onBack={() => navigate('/projects')}>
@@ -74,22 +111,39 @@ export default function CreateProject() {
 
         <ErrorBanner>{error}</ErrorBanner>
 
-        <form onSubmit={handleCreate} className="space-y-5">
+        <form onSubmit={handleCreate} className="space-y-5" noValidate>
           <Input
+            id="project-name"
+            name="projectName"
             label="Project Name"
             type="text"
+            required
+            maxLength={100}
             value={name}
+            error={errors.name}
             placeholder="e.g. Mobile App v2"
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (errors.name) setErrors((prev) => ({ ...prev, name: undefined }));
+            }}
             disabled={isLoading || atProjectLimit}
           />
 
           <Textarea
+            id="project-description"
+            name="projectDescription"
             label="Description"
             optional
+            maxLength={1000}
+            rows={4}
             value={description}
+            error={errors.description}
+            helperText="Maximum 1,000 characters."
             placeholder="Brief description of what this project tracks..."
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              if (errors.description) setErrors((prev) => ({ ...prev, description: undefined }));
+            }}
             disabled={isLoading || atProjectLimit}
           />
 

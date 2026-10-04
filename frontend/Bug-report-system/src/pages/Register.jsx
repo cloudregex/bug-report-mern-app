@@ -6,7 +6,16 @@ import Button from '../components/ui/Button';
 import ErrorBanner from '../components/ui/ErrorBanner';
 import { Input } from '../components/ui/Input';
 import { API_BASE_URL } from '../config';
-import { validateEmail, validatePasswordStrength } from '../utils/validation';
+import {
+  validateFullName,
+  normalizeFullName,
+  validateCompanyName,
+  normalizeCompanyName,
+  validateEmail,
+  normalizeEmail,
+  validatePasswordStrength,
+  validateConfirmPassword
+} from '../utils/validation';
 
 export default function Register() {
   const [companyName, setCompanyName] = useState('');
@@ -16,6 +25,7 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
   const [shake, setShake] = useState(false);
   const navigate = useNavigate();
 
@@ -31,42 +41,60 @@ export default function Register() {
   const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
+    const newErrors = {};
 
-    if (!companyName.trim() || !name.trim() || !email.trim() || !password || !confirmPassword) {
-      setError('Please fill in all fields.');
-      triggerShake();
-      return;
+    // Validate Company Name
+    const companyCheck = validateCompanyName(companyName, { fieldName: 'company name', required: true });
+    if (!companyCheck.valid) {
+      newErrors.companyName = companyCheck.message;
     }
 
-    const emailCheck = validateEmail(email);
+    // Validate Full Name (permissive to international names, strict on unsafe chars)
+    const nameCheck = validateFullName(name, { fieldName: 'full name', required: true, maxLength: 100 });
+    if (!nameCheck.valid) {
+      newErrors.name = nameCheck.message;
+    }
+
+    // Validate Email
+    const emailCheck = validateEmail(email, { required: true });
     if (!emailCheck.valid) {
-      setError(emailCheck.message);
-      triggerShake();
-      return;
+      newErrors.email = emailCheck.message;
     }
 
+    // Validate Password
     const passwordCheck = validatePasswordStrength(password);
     if (!passwordCheck.valid) {
-      setError(passwordCheck.message);
+      newErrors.password = passwordCheck.message;
+    }
+
+    // Validate Confirm Password
+    const confirmCheck = validateConfirmPassword(password, confirmPassword);
+    if (!confirmCheck.valid) {
+      newErrors.confirmPassword = confirmCheck.message;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setError('Please fix the errors in the form.');
       triggerShake();
       return;
     }
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      triggerShake();
-      return;
-    }
-
+    setErrors({});
     setIsLoading(true);
+
+    const normalizedCompany = normalizeCompanyName(companyName);
+    const normalizedName = normalizeFullName(name);
+    const normalizedMail = normalizeEmail(email);
+
     try {
       const res = await fetch(`${API_BASE_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyName: companyName.trim(),
-          name: name.trim(),
-          email: email.trim(),
+          companyName: normalizedCompany,
+          name: normalizedName,
+          email: normalizedMail,
           password,
           confirmPassword,
         }),
@@ -99,58 +127,93 @@ export default function Register() {
 
         <ErrorBanner>{error}</ErrorBanner>
 
-        <form onSubmit={handleRegister} className="space-y-4">
+        <form onSubmit={handleRegister} className="space-y-4" noValidate>
           <Input
             id="register-company"
+            name="companyName"
             label="Company name"
             type="text"
+            required
+            maxLength={100}
             value={companyName}
             autoComplete="organization"
-            onChange={(e) => setCompanyName(e.target.value)}
+            error={errors.companyName}
+            onChange={(e) => {
+              setCompanyName(e.target.value);
+              if (errors.companyName) setErrors((prev) => ({ ...prev, companyName: undefined }));
+            }}
             placeholder="e.g. Acme Corp"
             disabled={isLoading}
           />
 
           <Input
             id="register-name"
-            label="Your full name"
+            name="fullName"
+            label="Full name"
             type="text"
+            required
+            maxLength={100}
             value={name}
             autoComplete="name"
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Jane Smith"
+            error={errors.name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (errors.name) setErrors((prev) => ({ ...prev, name: undefined }));
+            }}
+            placeholder="e.g. Rahul Sharma"
             disabled={isLoading}
           />
 
           <Input
             id="register-email"
+            name="email"
             label="Work email"
             type="email"
+            required
+            maxLength={254}
             value={email}
             autoComplete="email"
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@company.com"
+            error={errors.email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+            }}
+            placeholder="e.g. rahul@acme.com"
             disabled={isLoading}
           />
 
           <Input
             id="register-password"
+            name="password"
             label="Password"
             type="password"
+            required
+            maxLength={128}
             value={password}
             autoComplete="new-password"
-            onChange={(e) => setPassword(e.target.value)}
+            error={errors.password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+            }}
             placeholder="Create a strong password"
             disabled={isLoading}
           />
 
           <Input
             id="register-confirm-password"
+            name="confirmPassword"
             label="Confirm password"
             type="password"
+            required
+            maxLength={128}
             value={confirmPassword}
             autoComplete="new-password"
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            error={errors.confirmPassword}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value);
+              if (errors.confirmPassword) setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+            }}
             placeholder="Re-enter your password"
             disabled={isLoading}
           />

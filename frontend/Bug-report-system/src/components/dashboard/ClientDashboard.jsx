@@ -9,6 +9,11 @@ import ErrorBanner from '../ui/ErrorBanner';
 import EmptyState from '../ui/EmptyState';
 import { PageLoader } from '../ui/Spinner';
 import { API_BASE_URL, BASE_URL } from '../../config';
+import {
+  validateTicketTitle,
+  validateTicketDescription,
+  validateImageFile
+} from '../../utils/validation';
 
 export default function ClientDashboard() {
   const [issues, setIssues] = useState([]);
@@ -25,6 +30,7 @@ export default function ClientDashboard() {
   const [imagePreview, setImagePreview] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [errors, setErrors] = useState({});
 
   const navigate = useNavigate();
 
@@ -61,6 +67,14 @@ export default function ClientDashboard() {
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      const check = validateImageFile(file);
+      if (!check.valid) {
+        setErrors((prev) => ({ ...prev, image: check.message }));
+        setImage(null);
+        setImagePreview('');
+        return;
+      }
+      setErrors((prev) => ({ ...prev, image: undefined }));
       setImage(file);
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -75,16 +89,43 @@ export default function ClientDashboard() {
 
   const handleSubmitIssue = async (e) => {
     e.preventDefault();
-    if (!projectId) return setSubmitError('Please select a project');
-    if (!title.trim()) return setSubmitError('Please provide a title');
-
     setSubmitError('');
+    const newErrors = {};
+
+    if (!projectId) {
+      newErrors.projectId = 'Please select a project.';
+    }
+
+    const titleCheck = validateTicketTitle(title);
+    if (!titleCheck.valid) {
+      newErrors.title = titleCheck.message;
+    }
+
+    const descCheck = validateTicketDescription(description);
+    if (!descCheck.valid) {
+      newErrors.description = descCheck.message;
+    }
+
+    if (image) {
+      const imgCheck = validateImageFile(image);
+      if (!imgCheck.valid) {
+        newErrors.image = imgCheck.message;
+      }
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setSubmitError('Please address the errors below.');
+      return;
+    }
+
+    setErrors({});
     setIsSubmitting(true);
 
     const formData = new FormData();
     formData.append('projectId', projectId);
     formData.append('title', title.trim());
-    formData.append('description', description.trim());
+    formData.append('description', description ? description.trim() : '');
     if (image) {
       formData.append('image', image);
     }
@@ -105,6 +146,7 @@ export default function ClientDashboard() {
       setDescription('');
       setImage(null);
       setImagePreview('');
+      setErrors({});
       setShowModal(false);
 
       // Refresh list
@@ -249,13 +291,19 @@ export default function ClientDashboard() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmitIssue} className="p-6 space-y-4">
+            <form onSubmit={handleSubmitIssue} className="p-6 space-y-4" noValidate>
               <ErrorBanner>{submitError}</ErrorBanner>
 
               <Select
+                id="issue-project"
+                name="projectId"
                 label="Select Project"
                 value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
+                error={errors.projectId}
+                onChange={(e) => {
+                  setProjectId(e.target.value);
+                  if (errors.projectId) setErrors((prev) => ({ ...prev, projectId: undefined }));
+                }}
                 disabled={isSubmitting}
                 required
               >
@@ -266,29 +314,44 @@ export default function ClientDashboard() {
               </Select>
 
               <Input
+                id="issue-title"
+                name="title"
                 label="Issue Title"
                 type="text"
+                required
+                maxLength={150}
                 placeholder="e.g. Navigation bar overflows on small screens"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                error={errors.title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (errors.title) setErrors((prev) => ({ ...prev, title: undefined }));
+                }}
                 disabled={isSubmitting}
-                required
               />
 
               <Textarea
+                id="issue-description"
+                name="description"
                 label="Describe the issue"
+                optional
+                maxLength={5000}
                 placeholder="Provide steps to reproduce or details about the issue..."
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                error={errors.description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  if (errors.description) setErrors((prev) => ({ ...prev, description: undefined }));
+                }}
                 disabled={isSubmitting}
                 rows={4}
               />
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+                <label htmlFor="issue-image-upload" className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
                   Attach Screenshot / Image (Optional)
                 </label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-lg border-muted-foreground/35 hover:border-primary/50 transition-all relative">
+                <div className={`mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-lg ${errors.image ? 'border-destructive/60 bg-destructive/5' : 'border-muted-foreground/35 hover:border-primary/50'} transition-all relative`}>
                   <div className="space-y-1 text-center">
                     {imagePreview ? (
                       <div className="relative inline-block">
@@ -298,6 +361,7 @@ export default function ClientDashboard() {
                           onClick={() => {
                             setImage(null);
                             setImagePreview('');
+                            setErrors((prev) => ({ ...prev, image: undefined }));
                           }}
                           className="absolute -top-2 -right-2 bg-destructive text-white p-1 rounded-full shadow hover:bg-destructive-hover cursor-pointer"
                         >
@@ -308,22 +372,29 @@ export default function ClientDashboard() {
                       <>
                         <ImageIcon className="mx-auto h-12 w-12 text-muted-foreground/50" />
                         <div className="flex text-sm justify-center">
-                          <label className="relative cursor-pointer bg-transparent rounded-md font-semibold text-primary hover:text-primary-hover focus-within:outline-none">
+                          <label htmlFor="issue-image-upload" className="relative cursor-pointer bg-transparent rounded-md font-semibold text-primary hover:text-primary-hover focus-within:outline-none">
                             <span>Upload a file</span>
                             <input
+                              id="issue-image-upload"
+                              name="image"
                               type="file"
                               className="sr-only"
-                              accept="image/*"
+                              accept="image/jpeg,image/png,image/webp,image/gif"
                               onChange={handleImageChange}
                               disabled={isSubmitting}
                             />
                           </label>
                         </div>
-                        <p className="text-xs text-muted-foreground">PNG, JPG, GIF up to 10MB</p>
+                        <p className="text-xs text-muted-foreground">PNG, JPG, WebP, GIF up to 10MB</p>
                       </>
                     )}
                   </div>
                 </div>
+                {errors.image && (
+                  <span className="field-error" role="alert">
+                    {errors.image}
+                  </span>
+                )}
               </div>
 
               <div className="flex gap-3 pt-4 border-t mt-6">
@@ -333,6 +404,7 @@ export default function ClientDashboard() {
                   onClick={() => {
                     setImage(null);
                     setImagePreview('');
+                    setErrors({});
                     setShowModal(false);
                   }}
                   disabled={isSubmitting}
@@ -343,7 +415,7 @@ export default function ClientDashboard() {
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={isSubmitting || !projectId || !title.trim()}
+                  disabled={isSubmitting}
                   loading={isSubmitting}
                   className="!flex-1"
                 >
