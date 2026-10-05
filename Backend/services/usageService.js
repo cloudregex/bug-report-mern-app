@@ -36,10 +36,8 @@ export const computeUsageCounts = async (companyId) => {
 
 export const syncUsage = async (companyId) => {
   const counts = await computeUsageCounts(companyId);
-  const [usage] = await Usage.upsert(
-    { companyId, ...counts },
-    { returning: true }
-  );
+  await Usage.upsert({ companyId, ...counts });
+  const usage = await Usage.findOne({ where: { companyId } });
   return usage;
 };
 

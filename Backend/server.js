@@ -102,12 +102,6 @@ const startServer = async () => {
       console.warn('Enum column update warning:', enumErr.message);
     }
 
-    try {
-      await sequelize.query("ALTER TABLE subscriptions ADD COLUMN stripe_customer_id VARCHAR(255) NULL");
-    } catch (err) {
-      console.warn("duplicate colume error");
-    }
-
     await seedAdminUser();
     await seedPlans();
     await ensureAllCompanySubscriptions();

@@ -74,7 +74,7 @@ export const getPlatformSecurityDashboard = async (req, res) => {
       LoginAttempt.findAll({
         where: { success: false, createdAt: { [Op.gte]: since } },
         attributes: [
-          [fn('DATE', col('created_at')), '_id'],
+          [fn('DATE', col('created_at')), 'date'],
           [fn('COUNT', col('id')), 'count']
         ],
         group: [fn('DATE', col('created_at'))],

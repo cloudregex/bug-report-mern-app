@@ -225,11 +225,20 @@ export const getSaasDashboard = async () => {
     return sum + Number(plan?.price || 0);
   }, 0);
 
-  const topCompanies = await Promise.all(
+  const topCompaniesRaw = await Promise.all(
     subscriptions.slice(0, 10).map(async (sub) => {
       const company = sub.company || sub.get?.('company');
       const companyId = company?.id || sub.companyId;
-      const usage = await syncUsage(companyId);
+      if (!companyId) return null;
+
+      let usage;
+      try {
+        usage = await syncUsage(companyId);
+      } catch (e) {
+        console.warn(`syncUsage failed for company ${companyId}:`, e.message);
+        usage = { employeesCount: 0, projectsCount: 0, ticketsCreatedThisMonth: 0, storageUsed: 0 };
+      }
+
       const plan = sub.plan || sub.get?.('plan');
       return {
         companyId,
@@ -242,6 +251,7 @@ export const getSaasDashboard = async () => {
       };
     })
   );
+  const topCompanies = topCompaniesRaw.filter(Boolean);
 
   topCompanies.sort((a, b) => (b.employeesCount + b.projectsCount) - (a.employeesCount + a.projectsCount));
 
@@ -251,7 +261,16 @@ export const getSaasDashboard = async () => {
   let totalTickets = 0;
   for (const sub of subscriptions) {
     const company = sub.company || sub.get?.('company');
-    const usage = await syncUsage(company?.id || sub.companyId);
+    const companyId = company?.id || sub.companyId;
+    if (!companyId) continue;
+
+    let usage;
+    try {
+      usage = await syncUsage(companyId);
+    } catch (e) {
+      console.warn(`syncUsage failed for company ${companyId}:`, e.message);
+      usage = { storageUsed: 0, employeesCount: 0, projectsCount: 0, ticketsCreatedThisMonth: 0 };
+    }
     totalStorage += usage.storageUsed || 0;
     totalEmployees += usage.employeesCount || 0;
     totalProjects += usage.projectsCount || 0;
@@ -276,12 +295,20 @@ export const getSaasDashboard = async () => {
 export const getCompaniesOverview = async () => {
   const subscriptions = await Subscription.findAll({ include: subscriptionIncludes(), order: [['updatedAt', 'DESC']] });
 
-  const companies = await Promise.all(
+  const companies = (await Promise.all(
     subscriptions.map(async (sub) => {
       const company = sub.company || sub.get?.('company');
       const companyId = company?.id || sub.companyId;
+      if (!companyId) return null;
+
       const plan = sub.plan || sub.get?.('plan');
-      const usage = await syncUsage(companyId);
+      let usage;
+      try {
+        usage = await syncUsage(companyId);
+      } catch (e) {
+        console.warn(`syncUsage failed for company ${companyId}:`, e.message);
+        usage = { employeesCount: 0, projectsCount: 0, ticketsCreatedThisMonth: 0, storageUsed: 0 };
+      }
 
       return {
         companyId,
@@ -304,7 +331,7 @@ export const getCompaniesOverview = async () => {
         }
       };
     })
-  );
+  )).filter(Boolean);
 
   return companies.sort((a, b) => (b.usage.employeesCount + b.usage.projectsCount) - (a.usage.employeesCount + a.usage.projectsCount));
 };
